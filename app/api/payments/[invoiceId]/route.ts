@@ -6,22 +6,26 @@ type RouteContext = {
   }>;
 };
 
-// GET /api/payments/[invoiceId]
 export async function GET(
   _request: Request,
   context: RouteContext
 ): Promise<NextResponse> {
   const { invoiceId } = await context.params;
 
-  // 👇 Пока что это мок-данные.
-  // Позже заменим на реальные из БД / партнёра.
+  // Вычисляем валюту из invoiceId
+  const parts = invoiceId.split("_"); // ["inv", "usdt", "123456"]
+  const currencyPart = parts[1]?.toUpperCase();
+
+  const cryptoCurrency =
+    currencyPart === "USDT" || currencyPart === "USDC" ? currencyPart : "USDT";
+
   const mockInvoice = {
     invoiceId,
     fiatCurrency: "EUR",
-    fiatAmount: 777, // ← поставь другое число
-    cryptoCurrency: "BTC",
-    cryptoAmount: 0.0099,
-    status: "waiting",
+    fiatAmount: 120,
+    cryptoCurrency, // USDT or USDC
+    cryptoAmount: 120,
+    status: "waiting" as const,
     expiresAt: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
   };
 

@@ -6,11 +6,13 @@ type PaymentWidgetProps = {
   invoiceId: string;
 };
 
+type SupportedCrypto = "USDT" | "USDC";
+
 type InvoiceData = {
   invoiceId: string;
   fiatCurrency: string;
   fiatAmount: number;
-  cryptoCurrency: string;
+  cryptoCurrency: SupportedCrypto | string;
   cryptoAmount: number;
   status: "waiting" | "pending" | "confirmed" | "expired" | string;
   expiresAt: string;
@@ -20,6 +22,10 @@ export default function PaymentWidget({ invoiceId }: PaymentWidgetProps) {
   const [data, setData] = useState<InvoiceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Временный адрес — позже сюда подставим реальный USDT/USDC адрес от провайдера
+  const rawAddress = "0x1234567890abcdef1234567890abcdef12345678";
 
   // Загружаем данные инвойса с нашего API
   useEffect(() => {
@@ -77,14 +83,24 @@ export default function PaymentWidget({ invoiceId }: PaymentWidgetProps) {
       ? "bg-blue-500"
       : "bg-amber-400";
 
-  const timeLeftText = data
-    ? "25:00" // позже заменим на реальный таймер до expiresAt
-    : "--:--";
+  const timeLeftText = data ? "25:00" : "--:--"; // позже сделаем реальный таймер
 
   const fiatAmount = data?.fiatAmount ?? 0;
   const fiatCurrency = data?.fiatCurrency ?? "EUR";
   const cryptoAmount = data?.cryptoAmount ?? 0;
-  const cryptoCurrency = data?.cryptoCurrency ?? "BTC";
+  const cryptoCurrency: string = data?.cryptoCurrency ?? "USDT";
+
+  const displayAddress = `${rawAddress.slice(0, 10)}...${rawAddress.slice(-6)}`;
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(rawAddress);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   return (
     <div className="w-full max-w-xl mx-auto rounded-xl border border-gray-200 bg-white shadow-sm p-6 space-y-6">
@@ -92,10 +108,10 @@ export default function PaymentWidget({ invoiceId }: PaymentWidgetProps) {
       <div className="flex items-baseline justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">
-            Pay with cryptocurrency
+            Pay with stablecoin
           </h2>
           <p className="text-sm text-gray-500 mt-1">
-            Use your crypto wallet to complete the payment.
+            Use USDT or USDC from your crypto wallet to complete this payment.
           </p>
         </div>
         <span className="text-xs font-mono text-gray-400">
@@ -135,29 +151,51 @@ export default function PaymentWidget({ invoiceId }: PaymentWidgetProps) {
             </div>
           </div>
 
-          {/* QR + address placeholder */}
-          <div className="grid grid-cols-1 sm:grid-cols-[160px,1fr] gap-4 items-center">
-            {/* QR placeholder */}
-            <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 aspect-square">
-              <span className="text-xs text-gray-400">QR code placeholder</span>
-            </div>
-
-            {/* Address + instructions */}
-            <div className="space-y-3">
+          {/* Payment details (address + instructions) */}
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
               <div>
-                <div className="text-sm font-medium text-gray-700 mb-1">
-                  Wallet address
+                <div className="text-sm font-medium text-gray-700">
+                  Wallet address ({cryptoCurrency})
                 </div>
-                <div className="rounded-md bg-gray-900 text-gray-100 text-xs font-mono p-3 break-all">
-                  0x1234...abcd (example address)
+                <div className="mt-1 rounded-md bg-gray-900 text-gray-100 text-xs font-mono px-3 py-2 break-all">
+                  {displayAddress}
+                </div>
+                <div className="mt-1 text-[11px] text-gray-400">
+                  Always double-check the address before sending.
                 </div>
               </div>
-              <ul className="text-xs text-gray-500 list-disc list-inside space-y-1">
-                <li>Send only {cryptoCurrency} to this address.</li>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-100 transition self-start sm:self-auto"
+              >
+                {copied ? "Copied ✓" : "Copy address"}
+              </button>
+            </div>
+
+            <div className="border-t border-gray-200 pt-3">
+              <div className="text-sm font-medium text-gray-700 mb-1">
+                How to pay
+              </div>
+              <ol className="list-decimal list-inside text-xs text-gray-600 space-y-1">
+                <li>Open your crypto wallet (mobile or desktop).</li>
                 <li>
-                  The payment will be detected automatically on the blockchain.
+                  Select <span className="font-semibold">{cryptoCurrency}</span>{" "}
+                  on the correct network (as agreed with your provider).
                 </li>
-              </ul>
+                <li>
+                  Paste the address above and send exactly{" "}
+                  <span className="font-semibold">
+                    {cryptoAmount} {cryptoCurrency}
+                  </span>
+                  .
+                </li>
+                <li>
+                  For large amounts, consider sending a small test transaction
+                  first and wait for confirmation.
+                </li>
+              </ol>
             </div>
           </div>
 

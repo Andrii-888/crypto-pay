@@ -10,23 +10,30 @@ export default async function InvoicePaymentPage({ params }: PageProps) {
   const { invoiceId } = await params;
 
   return (
-    <div
-      style={{
-        padding: "40px",
-        fontFamily: "sans-serif",
-        maxWidth: "900px",
-        margin: "0 auto",
-      }}
-    >
-      <h1 style={{ fontSize: "32px", marginBottom: "10px" }}>Crypto Payment</h1>
+    <div className="min-h-screen bg-[#fafafa] px-4 py-10 flex justify-center">
+      <div className="w-full max-w-3xl">
+        {/* ======= HEADER ======= */}
+        <div className="w-full flex items-center justify-between pb-6 border-b border-gray-200 mb-10 relative">
+          {/* Back button */}
+          <a
+            href="/demo/checkout"
+            className="flex items-center text-sm text-gray-600 hover:text-gray-900 transition"
+          >
+            <span className="mr-1">←</span> Back
+          </a>
 
-      <p style={{ marginBottom: "30px", color: "#555" }}>
-        Pay your order using cryptocurrency. Your payment will be detected
-        automatically on the blockchain.
-      </p>
+          {/* Center title */}
+          <h1 className="text-xl font-semibold text-gray-900 absolute left-1/2 -translate-x-1/2">
+            Crypto Payment
+          </h1>
 
-      {/* ВАЖНО: здесь должен быть виджет */}
-      <PaymentWidget invoiceId={invoiceId} />
+          {/* Right empty block for symmetry */}
+          <div className="w-10"></div>
+        </div>
+
+        {/* ======= PAYMENT WIDGET ======= */}
+        <PaymentWidget invoiceId={invoiceId} />
+      </div>
     </div>
   );
 }
