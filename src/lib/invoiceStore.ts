@@ -1,31 +1,34 @@
 // src/lib/invoiceStore.ts
 
+export type InvoiceStatus = "waiting" | "pending" | "confirmed" | "expired";
+
 export type InvoiceData = {
   invoiceId: string;
+
+  // Fiat side
   fiatAmount: number;
   fiatCurrency: string;
+
+  // Crypto side
+  cryptoCurrency: "USDT" | "USDC" | string;
   cryptoAmount: number;
-  cryptoCurrency: string;
-  createdAt: number;
+
+  // State
+  status: InvoiceStatus;
+  expiresAt: string;
+
+  // URL, куда мы редиректим клиента для оплаты
+  paymentUrl: string;
 };
 
-// Хранилище внутри globalThis (не сбрасывается при hot reload)
-const g = globalThis as any;
+// Простое in-memory хранилище для демо.
+// На проде это будет БД или внешний провайдер.
+const invoiceStore = new Map<string, InvoiceData>();
 
-if (!g.invoiceStore) {
-  g.invoiceStore = new Map<string, InvoiceData>();
+export function saveInvoice(invoice: InvoiceData): void {
+  invoiceStore.set(invoice.invoiceId, invoice);
 }
 
-const store: Map<string, InvoiceData> = g.invoiceStore;
-
-export function saveInvoice(invoice: InvoiceData) {
-  store.set(invoice.invoiceId, invoice);
-}
-
-export function getInvoice(id: string) {
-  return store.get(id);
-}
-
-export function listInvoices() {
-  return [...store.values()];
+export function getInvoice(invoiceId: string): InvoiceData | undefined {
+  return invoiceStore.get(invoiceId);
 }
