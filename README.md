@@ -218,3 +218,83 @@ Webhook / callback от партнёра
 .env с ключами партнёра.
 
 Ограничения по CORS, защита от случайного доступа и т.п.
+
+## Integration for merchants
+
+### 1. Create crypto payment (server-side)
+
+Your backend should call our API to create a new crypto payment when the customer chooses “Pay with crypto”.
+
+**Endpoint**
+
+`POST /api/payments/create`
+
+**Request body (JSON)**
+
+```json
+{
+  "orderId": "ORDER-123",
+  "fiatAmount": 120,
+  "fiatCurrency": "EUR",
+  "cryptoCurrency": "USDT"
+}
+orderId – your internal order ID (string).
+
+fiatAmount – order amount in fiat (number).
+
+fiatCurrency – fiat currency code, e.g. EUR, CHF, USD.
+
+cryptoCurrency – which stablecoin the customer will use: USDT or USDC.
+
+Response (example)
+
+json
+Copy code
+{
+  "invoiceId": "inv_1764269662327",
+  "orderId": "ORDER-123",
+  "fiatAmount": 120,
+  "fiatCurrency": "EUR",
+  "cryptoAmount": 120,
+  "cryptoCurrency": "USDT",
+  "status": "waiting",
+  "expiresAt": "2025-11-27T19:22:32.327Z",
+  "paymentUrl": "/open/pay/inv_1764269662327"
+}
+2. Redirect customer to paymentUrl
+After a successful response, redirect the customer from your shop to:
+
+text
+Copy code
+https://YOUR-DOMAIN.com/open/pay/inv_1764269662327
+(or use the paymentUrl value returned by API, prefixed with your domain).
+
+The customer will see the hosted payment page with:
+
+order amount in fiat,
+
+amount to pay in USDT or USDC,
+
+wallet address and instructions,
+
+live countdown for the payment window.
+
+3. Listen for payment status (coming next)
+In the next steps we will add:
+
+webhook for status updates (waiting → pending → confirmed / expired);
+
+dashboard for manual checks.
+
+For now the payment page works in demo/mock mode – good enough for UI/UX and integration tests.
+
+yaml
+Copy code
+
+---
+
+Это вообще **ничего не ломает в коде**, просто превращает проект в понятный white-label продукт для магазинов.
+
+Сделай: вставь этот блок в `README.md`, сохрани и скажи «готово» — и дальше выберу следующий узкий шаг уже по коду (скорее всего сделаем выбор USDT/USDC прямо на демо-чекауте, чтобы был полноценный сценарий).
+::contentReference[oaicite:0]{index=0}
+```

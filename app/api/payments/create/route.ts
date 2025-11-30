@@ -1,50 +1,42 @@
-import { NextResponse } from "next/server";
+// app/api/payments/create/route.ts
+import { NextRequest, NextResponse } from "next/server";
 
-type SupportedCrypto = "USDT" | "USDC";
-
-type CreatePaymentBody = {
-  orderId: string;
-  fiatAmount: number;
-  fiatCurrency: string;
-  cryptoCurrency: SupportedCrypto; // USDT | USDC
-};
-
-export async function POST(req: Request): Promise<NextResponse> {
+export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as CreatePaymentBody;
+    const body = await req.json().catch(() => ({}));
 
-    const { orderId, fiatAmount, fiatCurrency, cryptoCurrency } = body;
+    const amount = Number(body.amount ?? 0);
+    const fiatCurrency = (body.fiatCurrency as string) || "EUR";
 
-    if (!orderId || !fiatAmount || !fiatCurrency || !cryptoCurrency) {
-      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
-    // ВСТАВЛЯЕМ валюту в invoiceId
-    const invoiceId = `inv_${cryptoCurrency.toLowerCase()}_${Date.now()}`;
+    // Мокаем расчёт инвойса
+    const invoiceId = `inv_${Date.now()}`;
+    const cryptoCurrency = "USDT";
 
-    // 1:1 для демо
-    const cryptoAmount = fiatAmount;
+    // Псевдо-курс: 1 USDT = 1 EUR (для демо)
+    const cryptoAmount = amount;
 
-    const paymentUrl = `/open/pay/${invoiceId}`;
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 25 * 60 * 1000).toISOString(); // +25 минут
 
-    const invoice = {
-      invoiceId,
-      orderId,
-      fiatAmount,
-      fiatCurrency,
-      cryptoCurrency,
-      cryptoAmount,
-      status: "waiting" as const,
-      expiresAt: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
-      paymentUrl,
-    };
-
-    return NextResponse.json(invoice);
+    return NextResponse.json(
+      {
+        invoiceId,
+        fiatAmount: amount,
+        fiatCurrency,
+        cryptoCurrency,
+        cryptoAmount,
+        status: "waiting", // waiting / pending / confirmed / expired
+        expiresAt,
+        paymentUrl: `/open/pay/${invoiceId}`, // потом сделаем страницу
+      },
+      { status: 200 }
+    );
   } catch (err) {
     console.error(err);
-    return NextResponse.json(
-      { error: "Failed to create invoice" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

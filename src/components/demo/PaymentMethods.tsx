@@ -1,0 +1,83 @@
+// src/components/demo/PaymentMethods.tsx
+
+type PaymentMethodsProps = {
+  hasItems: boolean;
+  cartTotal: number;
+};
+
+export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
+  function handleCryptoClick() {
+    if (!hasItems) return;
+    // Переход на страницу /checkout с суммой в query
+    window.location.href = `/checkout?amount=${cartTotal.toFixed(2)}`;
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">
+          Payment methods
+        </h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Only Crypto Pay is active in this prototype.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {/* Card - disabled */}
+        <button
+          type="button"
+          disabled
+          className="w-full flex items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 cursor-not-allowed shadow-sm"
+        >
+          <span className="flex items-center gap-2">
+            <span className="h-6 w-6 rounded-md bg-gray-200 flex items-center justify-center text-[13px]">
+              💳
+            </span>
+            <span className="font-medium">Pay by card (coming soon)</span>
+          </span>
+          <span className="text-[10px]">••••</span>
+        </button>
+
+        {/* Bank transfer - disabled */}
+        <button
+          type="button"
+          disabled
+          className="w-full flex items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 cursor-not-allowed shadow-sm"
+        >
+          <span className="flex items-center gap-2">
+            <span className="h-6 w-6 rounded-md bg-gray-200 flex items-center justify-center text-[13px]">
+              🏦
+            </span>
+            <span className="font-medium">Bank transfer (coming soon)</span>
+          </span>
+          <span className="text-[10px]">IBAN</span>
+        </button>
+
+        {/* Crypto Pay - active */}
+        <button
+          type="button"
+          onClick={handleCryptoClick}
+          className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition ${
+            hasItems
+              ? "bg-black text-white hover:bg-gray-900"
+              : "bg-gray-900/10 text-gray-400 cursor-not-allowed"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <span className="h-6 w-6 rounded-full border border-white/20 bg-white/10 flex items-center justify-center text-[10px] font-bold">
+              ₿
+            </span>
+            Pay with Crypto (CryptoPay)
+          </span>
+          <span className="text-[10px]">{hasItems ? "→" : ""}</span>
+        </button>
+      </div>
+
+      <p className="text-[10px] text-slate-400">
+        By choosing Crypto Pay you will be redirected to a secure crypto payment
+        page powered by our Swiss partner (demo).
+      </p>
+    </div>
+  );
+}
