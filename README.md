@@ -1,185 +1,325 @@
-🟦 Crypto Pay — Premium Demo Ecommerce Integration
+# 🟦 Crypto Pay — Premium Demo Ecommerce Integration
 
-A modern, high-end crypto checkout experience powered by a Swiss regulated partner.
+A modern, high-end crypto checkout experience powered by a Swiss-regulated partner.  
 Designed for real e-commerce, premium brands and fintech integrations.
 
-✨ Overview
+---
 
-Crypto Pay Demo — это полнофункциональная демонстрация интернет-магазина, который принимает криптовалюту (USDT/USDC) через швейцарского регулируемого провайдера.
+## ✨ Overview
 
-Показаны:
-• современный каталог товаров
-• семантическая корзина
-• премиальный интерфейс оплаты
-• API для создания инвойса
-• адаптивная верстка уровня Apple/Stripe
-• структура для дальнейших реальных интеграций
+**Crypto Pay Demo** — это демонстрационный интернет-магазин, который принимает криптовалюту (USDT / USDC) через швейцарского регулируемого провайдера (модель TripleA / Swiss PSP).
 
-🚀 Completed Functionality (Production-grade)
-🛍️ 1. Premium Product Catalog
+В демо уже показываем:
 
-6 реальных товаров (3D glasses, iPhone 17, hardware wallets, USB devices, LEDs)
+- современный каталог товаров
+- живую корзину и пересчёт суммы
+- премиальный экран checkout
+- бэкенд-API для создания крипто-инвойсов
+- базовую hosted-страницу оплаты `/open/pay/[invoiceId]`
+- адаптивную верстку уровня Apple / Stripe
+- архитектуру, готовую к подключению реального провайдера
 
-High-resolution изображения в /public/products
+**Tech stack**
 
-Apple-style сетка, clean UI, мягкие тени
+- Next.js 16 (App Router)
+- TypeScript
+- Tailwind CSS
+- Vercel (Production deployment)
 
-TailwindCSS 4.0
+---
 
-Полная адаптивность (iPhone → Desktop)
+## ✅ What’s Already Implemented
 
-🧺 2. Fully Functional Shopping Cart
+### 🛍 1. Premium Product Catalog
 
-Add-to-cart
+- 6 real products:
+  - NeoVision 3D Glasses
+  - iPhone 17 Pro Max
+  - Crypto Vault USB Key
+  - Hardware Wallet Pro
+  - Desk LED Lamp
+  - Mystery tech gadget
+- High-resolution images in `/public/products`
+- Clean “Apple-style” layout:
+  - soft shadows
+  - rounded cards
+  - balanced typography
+- Fully responsive (from iPhone to large desktop)
 
-Dynamic total
+### 🧺 2. Fully Functional Shopping Cart
 
-Item counter
+- Tap on a product card → item instantly added to cart
+- Dynamic total with `€` formatting
+- Item counter (0 → N items)
+- Separate **sticky Cart summary** panel on the right
+- Everything работает без перезагрузки (React client components)
 
-Separate sticky summary panel
+### 💳 3. Payment Methods (Stripe-like UI)
 
-Молниеносная работа без перезагрузок (React client-side)
+В панели оплаты:
 
-💳 3. Payment Methods (Stripe-like)
+- **Pay by card** — disabled placeholder (будущий Stripe/Adyen)
+- **Bank transfer (IBAN)** — disabled placeholder
+- **Pay with Crypto (CryptoPay)** — активный метод
 
-Card (disabled placeholder, enterprise-ready)
+Crypto Pay:
 
-Bank transfer (disabled placeholder)
+- доступен только при `cartTotal > 0`
+- перенаправляет пользователя на `/checkout?amount=XXX.XX`
 
-Crypto Pay (active) — интеграция с бэкендом
+### 💼 4. Checkout Page (Order Confirmation)
 
-💼 4. Checkout Page (Order Confirmation)
+`/checkout`
 
-Премиальный макет как у Apple Pay / Stripe Checkout
+- Премиальный макет в стиле Apple Pay / Stripe Checkout
+- Отображение фиксированной суммы заказа
+- Блок “What happens next?” с понятной логикой для клиента
+- Секция “Crypto payment” объясняет работу швейцарского провайдера
+- Кнопка **“Continue to Crypto Pay (create invoice)”** запускает реальный бэкенд-запрос
 
-Подробный step-by-step процесс для клиента
+### 🛠 5. Backend API — Invoice Creation
 
-Проверка суммы
+`POST /api/payments/create`
 
-Хватает для демонстрации инвестору/клиенту
+- Принимает JSON:
 
-🛠 5. Backend API (Swiss-style architecture)
-/api/payments/create
+  ```json
+  {
+    "amount": 1648,
+    "fiatCurrency": "EUR"
+  }
+  Создаёт мок-инвойс и возвращает:
+  ```
 
-✔ создаёт уникальный инвойс
-✔ возвращает:
-
+json
+Copy code
 {
-invoiceId,
-fiatAmount,
-fiatCurrency,
-cryptoCurrency,
-cryptoAmount,
-status: "waiting",
-expiresAt,
-paymentUrl
+"invoiceId": "inv_1764512345678",
+"fiatAmount": 1648,
+"fiatCurrency": "EUR",
+"cryptoCurrency": "USDT",
+"cryptoAmount": 1648,
+"status": "waiting",
+"expiresAt": "2025-11-30T09:43:49.749Z",
+"paymentUrl": "/open/pay/inv_1764512345678"
 }
+Использует in-memory invoice store в src/lib/invoiceStore.ts
 
-✔ полностью связано с checkout
+Связан c checkout: после успешного ответа пользователь перенаправляется на paymentUrl
 
-☁️ 6. Vercel Deployment — Ready
+💳 6. Hosted Invoice Page (Demo)
+/open/pay/[invoiceId]
 
-Полностью рабочая сборка
+Читает данные инвойса из invoiceStore
 
-Zero errors
+Если инвойс не найден → показывает “Invoice not found” (как у реальных PSP)
 
-Чистый билд
+Базовый layout:
 
-Рабочие роуты и динамические параметры
+заголовок
 
-🧩 Architecture
+краткий текст
+
+заготовка под блок оплаты / статус
+
+Это фундамент для будущей полноценной страницы с QR-кодом и статусами.
+
+☁️ 7. Vercel Deployment
+Production deployment: crypto-pay-\*.vercel.app
+
+Чистый билд, без ошибок
+
+Рабочие маршруты:
+
+/ — каталог + корзина
+
+/checkout — подтверждение заказа
+
+/api/payments/create — создание инвойса
+
+/open/pay/[invoiceId] — hosted-страница инвойса (demo)
+
+🧩 Project Structure
+txt
+Copy code
 /
 ├─ app/
-│ ├─ checkout/ # Order confirmation page
-│ ├─ api/
-│ │ └─ payments/create # Invoice generator (backend)
-│ └─ page.tsx # Catalog entry
+│ ├─ page.tsx # Main catalog entry (mounts DemoCartPage)
+│ ├─ checkout/
+│ │ └─ page.tsx # Order confirmation + "Continue to Crypto Pay"
+│ ├─ open/
+│ │ └─ pay/
+│ │ └─ [invoiceId]/page.tsx # Hosted invoice page (demo)
+│ └─ api/
+│ └─ payments/
+│ └─ create/route.ts # Invoice generator (backend mock)
 │
 ├─ public/
 │ ├─ products/ # All product images
-│ └─ icons/ # UI icons
+│ └─ icons/ # UI icons (if needed later)
 │
-└─ src/components/demo/
-├─ DemoCartPage.tsx # Main catalog page
-├─ ProductCard.tsx # Product tile
-├─ CartSummary.tsx # Right-side summary
-├─ PaymentMethods.tsx # Payment options
-└─ demoCartTypes.ts # Product types
+└─ src/
+├─ components/
+│ ├─ demo/
+│ │ ├─ DemoCartPage.tsx # Main catalog + cart layout
+│ │ ├─ ProductCard.tsx # Product tile with image
+│ │ ├─ CartSummary.tsx # Right-side summary card
+│ │ ├─ PaymentMethods.tsx# Payment options (card / bank / crypto)
+│ │ └─ demoCartTypes.ts # Product types
+│ └─ checkout/
+│ └─ CheckoutClient.tsx # Client-side logic for /checkout
+│
+└─ lib/
+└─ invoiceStore.ts # In-memory invoice storage (demo only)
+🟣 Roadmap — Next Steps to Production-Ready Crypto Gateway
+Ниже — чёткий план, что ещё нужно сделать, чтобы превратить демо в полноценную систему оплаты криптовалютой.
 
-🟣 Next Steps To Complete Full Real Integration
+🔜 Step 1 — Upgrade Hosted Invoice Page
+Цель: сделать /open/pay/[invoiceId] настоящей страницей оплаты.
 
-Ниже — дорожная карта уровня «production-ready crypto gateway».
+План:
 
-🔜 Step 1 — Hosted Invoice Page
+Показать:
 
-Create:
+сумму в EUR
 
-/open/pay/[invoiceId]/page.tsx
+сумму в USDT/USDC
 
-На этой странице будет:
-✔ сумма
-✔ QR-код
-✔ USDT/USDC адреса
-✔ таймер (25 минут)
-✔ статусы (waiting / pending / paid / expired)
+сеть (например, TRC20 / ERC20 / Polygon)
 
-🔜 Step 2 — Real Crypto Rate
+таймер на 25 минут (как у TripleA / Farfetch)
 
-Добавить запрос:
+Добавить выбор валюты (USDT / USDC)
 
-GET https://api.coingecko.com/api/v3/simple/price
+Состояния:
 
-или API швейцарского провайдера.
+waiting — ожидаем платеж
 
-🔜 Step 3 — Redirect flow
+pending — транзакция найдена, ждём подтверждений
 
-После создания инвойса → автоматический переход на:
-/open/pay/[invoiceId]
+confirmed — оплата прошла
 
-🔜 Step 4 — Invoice Status Checker
+expired — время вышло
 
-Frontend должен каждые 5–10 секунд запрашивать:
+🔜 Step 2 — QR-код и адрес кошелька
+Генерация QR-кода на основе:
 
-/api/payments/[invoiceId]/status
+vbnet
+Copy code
+usdt:<address>?amount=XXX&label=Order%20INV_xxx
+Кнопка Copy address
 
-🔜 Step 5 — Webhook Simulation
+Кнопка Copy amount
 
-Нужен endpoint:
+Всплывающие toast-уведомления “Address copied / Amount copied”
+
+🔜 Step 3 — Live Crypto Rate (Price Lock)
+Подключить внешний API (тип CoinGecko или API провайдера)
+
+При создании инвойса:
+
+фиксировать курс EUR → USDT / USDC на 25 минут
+
+сохранять в инвойсе cryptoRate + lockedUntil
+
+Показать пользователю:
+
+“Rate locked for 25 minutes”
+
+🔜 Step 4 — Invoice Status API
+Добавить новый endpoint:
+
+GET /api/payments/[invoiceId]/status
+
+Возвращает:
+
+json
+Copy code
+{
+"invoiceId": "inv\_...",
+"status": "waiting | pending | confirmed | expired",
+"txHash": "0x... (optional)"
+}
+На фронте:
+
+setInterval / polling каждые 5–10 cекунд
+
+Автоматическое обновление статуса на hosted-странице
+
+Редирект обратно в магазин после confirmed
+
+🔜 Step 5 — Webhook Simulation (Provider → Store)
+Добавить:
 
 POST /api/webhooks/payment
 
-Эмулирует поведение реального провайдера.
+Поведение:
 
-🔜 Step 6 — Admin Panel (optional)
+эмулирует callback от швейцарского провайдера
 
-View invoices
+по invoiceId меняет статус в invoiceStore на pending или confirmed
 
-Payment statuses
+логирует события (для отладки)
 
-Filtering
+Позже этот endpoint можно заменить на реальный webhook от партнёра.
 
-Manual test webhook
+🔜 Step 6 — Admin Panel (optional, но красиво)
+Раздел /admin:
 
-🏁 Final Result (when completed)
+Таблица со всеми инвойсами:
 
-Ты получишь законченную полноценную систему крипто-платежей, которую можно:
+дата
 
-✔ показывать инвесторам
-✔ демонстрировать клиентам бизнеса
-✔ интегрировать в Shopify/Next.js магазины
-✔ использовать как white-label продукт
-✔ подключать как часть финтех-экосистемы
+сумма
 
-📌 Premium Checklist (для README)
+статус
 
-- [x] Premium product gallery
-- [x] Apple-quality cart system
-- [x] Modern checkout page
-- [x] Invoice backend
-- [x] Vercel deployment
-- [ ] Hosted invoice page
-- [ ] QR payment screen
-- [ ] Live rate conversion
-- [ ] Invoice polling
-- [ ] Webhook processor
-- [ ] Admin dashboard
+txHash / network
+
+Фильтры по статусам
+
+Тестовая кнопка “Simulate webhook: paid”
+
+🏁 Final Result (после выполнения Roadmap)
+После завершения шагов выше у тебя будет:
+
+полноценная white-label система крипто-платежей
+
+премиальный UI, который можно показывать:
+
+инвесторам,
+
+владельцам интернет-магазинов,
+
+швейцарским/европейским партнёрам
+
+готовая основа для интеграции:
+
+в существующие Next.js / Shopify / Headless-магазины,
+
+в твою финтех-экосистему (Alpine Bridge / Swiss partners).
+
+📌 Premium Checklist
+Premium product gallery
+
+Apple-quality cart system
+
+Modern checkout page
+
+Invoice backend (/api/payments/create)
+
+In-memory invoice store
+
+Hosted invoice page (demo state)
+
+Vercel production deployment
+
+Full hosted invoice UI (QR + timer)
+
+Live FX rate & locked price
+
+Invoice polling (/status API)
+
+Webhook processor (provider → store)
+
+Admin dashboard
