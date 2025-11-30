@@ -1,42 +1,47 @@
 // app/api/payments/create/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { type InvoiceData, saveInvoice } from "@/lib/invoiceStore";
 
-export async function POST(req: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await request.json().catch(() => ({}));
 
-    const amount = Number(body.amount ?? 0);
-    const fiatCurrency = (body.fiatCurrency as string) || "EUR";
+    // Сумма в фиате
+    const fiatAmountRaw = Number(body?.amount);
+    const fiatCurrency: string = body?.fiatCurrency || "EUR";
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+    if (!Number.isFinite(fiatAmountRaw) || fiatAmountRaw <= 0) {
+      return NextResponse.json(
+        { error: "Invalid fiatAmount" },
+        { status: 400 }
+      );
     }
 
-    // Мокаем расчёт инвойса
+    const fiatAmount = Math.round(fiatAmountRaw * 100) / 100;
+
+    // В демо считаем 1:1, USDT
+    const cryptoCurrency: InvoiceData["cryptoCurrency"] = "USDT";
+    const cryptoAmount = fiatAmount;
+
     const invoiceId = `inv_${Date.now()}`;
-    const cryptoCurrency = "USDT";
 
-    // Псевдо-курс: 1 USDT = 1 EUR (для демо)
-    const cryptoAmount = amount;
+    const mockInvoice: InvoiceData = {
+      invoiceId,
+      fiatAmount,
+      fiatCurrency,
+      cryptoCurrency,
+      cryptoAmount,
+      status: "waiting",
+      expiresAt: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
+      paymentUrl: `/open/pay/${invoiceId}`,
+    };
 
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 25 * 60 * 1000).toISOString(); // +25 минут
+    // Сохраняем инвойс в in-memory хранилище
+    saveInvoice(mockInvoice);
 
-    return NextResponse.json(
-      {
-        invoiceId,
-        fiatAmount: amount,
-        fiatCurrency,
-        cryptoCurrency,
-        cryptoAmount,
-        status: "waiting", // waiting / pending / confirmed / expired
-        expiresAt,
-        paymentUrl: `/open/pay/${invoiceId}`, // потом сделаем страницу
-      },
-      { status: 200 }
-    );
+    return NextResponse.json(mockInvoice, { status: 201 });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 }

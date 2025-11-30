@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 
 type InvoiceResponse = {
   invoiceId: string;
@@ -11,34 +11,29 @@ type InvoiceResponse = {
   cryptoCurrency: string;
   cryptoAmount: number;
   status: string;
-  expiresAt: string;
   paymentUrl: string;
 };
 
-type CheckoutClientProps = {
-  initialAmount: number;
-};
+export default function CheckoutClient() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
-export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
-  const amount = initialAmount > 0 ? initialAmount : 0;
-  const hasAmount = amount > 0;
+  const rawAmount = searchParams.get("amount");
+  const initialAmount = rawAmount ? Number.parseFloat(rawAmount) : 0;
 
+  const [amount] = useState(initialAmount);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<InvoiceResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleCreateInvoice() {
-    if (!hasAmount || loading) return;
-
     try {
       setLoading(true);
       setError(null);
 
       const res = await fetch("/api/payments/create", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount,
           fiatCurrency: "EUR",
@@ -46,16 +41,29 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to create invoice");
+        let message = "Failed to create invoice";
+
+        try {
+          const data = await res.json();
+          if (data?.error) message = data.error;
+        } catch {
+          // игнорируем ошибки парсинга
+        }
+
+        throw new Error(message);
       }
 
       const json = (await res.json()) as InvoiceResponse;
-      setInvoice(json);
       console.log("Invoice created:", json);
-    } catch (err: any) {
+      setInvoice(json);
+
+      // 🚀 КЛЮЧЕВОЕ: редирект на страницу оплаты
+      if (json.paymentUrl) {
+        router.push(json.paymentUrl);
+      }
+    } catch (err) {
       console.error(err);
-      setError(err.message || "Unexpected error");
+      setError(err instanceof Error ? err.message : "Failed to create invoice");
     } finally {
       setLoading(false);
     }
@@ -63,169 +71,127 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      {/* Top nav / header */}
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-xs font-semibold text-white">
-              CP
-            </div>
-            <div>
-              <div className="text-sm font-semibold tracking-wide text-slate-900 uppercase">
-                Crypto Pay
-              </div>
-              <div className="text-xs text-slate-500">
-                Demo checkout powered by Swiss partner
-              </div>
-            </div>
-          </div>
-
-          <Link
-            href="/"
-            className="text-xs text-slate-500 hover:text-slate-800 underline-offset-4 hover:underline"
-          >
-            ← Back to cart
-          </Link>
-        </div>
-      </header>
-
-      {/* Content */}
-      <div className="max-w-4xl mx-auto px-4 py-8 lg:py-10">
-        <div className="mb-4">
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Confirm your order
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            This page simulates the step where your customer is redirected to
-            the crypto payment provider with a fixed order amount.
-          </p>
-        </div>
+      <div className="max-w-5xl mx-auto px-4 py-8 lg:py-10">
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          className="mb-6 text-xs text-slate-500 hover:text-slate-700"
+        >
+          ← Back to cart
+        </button>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
-          {/* Order summary */}
-          <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-slate-900">
-                Order details
-              </h2>
-              <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                Demo only
-              </span>
-            </div>
+          {/* Левая колонка: детали заказа */}
+          <section className="space-y-4">
+            <h1 className="text-2xl font-semibold text-slate-900">
+              Confirm your order
+            </h1>
+            <p className="text-sm text-slate-500 max-w-xl">
+              This page simulates the step where your customer is redirected to
+              the crypto payment provider with a fixed order amount.
+            </p>
 
-            {hasAmount ? (
-              <>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-500">Order amount</span>
-                    <span className="text-lg font-semibold text-slate-900">
-                      €{amount.toFixed(2)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    Order amount
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Taxes, shipping and discounts are not applied in this demo.
                   </p>
                 </div>
-
-                <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-3 text-xs text-slate-600 space-y-1">
-                  <p className="font-medium text-slate-800">
-                    What happens next?
-                  </p>
-                  <ol className="list-decimal list-inside space-y-1">
-                    <li>We will create a crypto invoice for this amount.</li>
-                    <li>
-                      You will see the provider&apos;s payment page with the
-                      final amount in USDT / USDC.
-                    </li>
-                    <li>
-                      After the payment is confirmed on-chain, the order will be
-                      marked as paid.
-                    </li>
-                  </ol>
+                <div className="text-right">
+                  <div className="text-xs uppercase text-slate-400">
+                    Demo only
+                  </div>
+                  <div className="text-xl font-semibold text-slate-900">
+                    €{amount.toFixed(2)}
+                  </div>
                 </div>
-              </>
-            ) : (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-3 text-xs text-amber-800 space-y-2">
-                <p className="font-medium">No order amount provided.</p>
-                <p>
-                  Please go back to the cart, add at least one product and then
-                  choose Crypto Pay as a payment method.
-                </p>
-                <Link
-                  href="/"
-                  className="inline-flex items-center text-[11px] font-medium text-amber-900 underline underline-offset-4"
-                >
-                  ← Back to cart
-                </Link>
               </div>
-            )}
 
-            {error && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700 mt-2">
-                {error}
+              <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600 space-y-1.5">
+                <div className="font-semibold text-slate-800">
+                  What happens next?
+                </div>
+                <ol className="list-decimal list-inside space-y-0.5">
+                  <li>We will create a crypto invoice for this amount.</li>
+                  <li>
+                    You will see the provider&apos;s payment page with the final
+                    amount in USDT / USDC.
+                  </li>
+                  <li>
+                    After the payment is confirmed on-chain, the order will be
+                    marked as paid.
+                  </li>
+                </ol>
               </div>
-            )}
 
-            {invoice && (
-              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-3 text-xs text-emerald-800 space-y-1 mt-2">
-                <p className="font-medium">Invoice created</p>
-                <p>
-                  ID: <span className="font-mono">{invoice.invoiceId}</span>
-                </p>
-                <p>
-                  To pay:{" "}
-                  <span className="font-semibold">
+              {invoice && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 space-y-1">
+                  <div className="font-semibold">Invoice created</div>
+                  <div>
+                    <span className="font-semibold">ID:</span>{" "}
+                    {invoice.invoiceId}
+                  </div>
+                  <div>
+                    <span className="font-semibold">To pay:</span>{" "}
                     {invoice.cryptoAmount} {invoice.cryptoCurrency}
-                  </span>
-                </p>
-                <p className="text-[10px] text-emerald-700/80">
-                  Next step (later): automatically redirect to{" "}
-                  <span className="font-mono">{invoice.paymentUrl}</span>
-                </p>
-              </div>
-            )}
+                  </div>
+                  <div className="text-[11px] text-emerald-700/80">
+                    Next step (later): automatically redirect to{" "}
+                    {invoice.paymentUrl}
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                  {error}
+                </div>
+              )}
+            </div>
           </section>
 
-          {/* Side panel: provider & action */}
-          <aside className="space-y-4 lg:pt-2">
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+          {/* Правая колонка: блок Crypto payment */}
+          <aside>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4 shadow-sm">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">
+                <h2 className="text-sm font-semibold text-slate-900">
                   Crypto payment
-                </h3>
+                </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   In production this step would redirect the customer to a
                   regulated Swiss crypto payment provider.
                 </p>
               </div>
 
-              <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-3 text-[11px] text-slate-600 space-y-1">
-                <p>
-                  • Provider locks the crypto rate for a short time window (e.g.
-                  25 minutes).
-                </p>
-                <p>
-                  • Customer pays in USDT/USDC from their own wallet, funds do
-                  not touch your infrastructure.
-                </p>
-                <p>• You receive EUR/CHF on your business account (or USDT).</p>
+              <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-[11px] text-slate-600 space-y-1.5">
+                <ul className="space-y-1">
+                  <li>
+                    • Provider locks the crypto rate for a short time window
+                    (e.g. 25 minutes).
+                  </li>
+                  <li>
+                    • Customer pays in USDT/USDC from their own wallet, funds do
+                    not touch your infrastructure.
+                  </li>
+                  <li>
+                    • You receive EUR/CHF on your business account (or USDT).
+                  </li>
+                </ul>
               </div>
 
               <button
                 type="button"
                 onClick={handleCreateInvoice}
-                disabled={!hasAmount || loading}
-                className={`w-full rounded-lg px-4 py-2 text-xs font-medium transition ${
-                  hasAmount && !loading
-                    ? "bg-black text-white hover:bg-gray-900"
-                    : "bg-gray-900/10 text-gray-400 cursor-not-allowed"
-                }`}
+                disabled={loading}
+                className="w-full rounded-lg bg-black text-white text-xs font-medium px-4 py-2.5 hover:bg-slate-900 disabled:opacity-70 disabled:cursor-wait transition"
               >
                 {loading
-                  ? "Creating invoice…"
-                  : hasAmount
-                  ? "Continue to Crypto Pay (create invoice)"
-                  : "Select products in cart first"}
+                  ? "Creating crypto invoice..."
+                  : "Continue to Crypto Pay (create invoice)"}
               </button>
 
               <p className="text-[10px] text-slate-400">

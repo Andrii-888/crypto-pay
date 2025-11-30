@@ -1,6 +1,6 @@
 // app/checkout/page.tsx
 
-import CheckoutClient from "@/src/components/checkout/CheckoutClient";
+import CheckoutClient from "@/components/checkout/CheckoutClient";
 
 type CheckoutPageProps = {
   searchParams: Promise<{

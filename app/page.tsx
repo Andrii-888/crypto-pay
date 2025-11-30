@@ -1,4 +1,4 @@
-import DemoCartPage from "@/src/components/demo/DemoCartPage";
+import DemoCartPage from "@/components/demo/DemoCartPage";
 
 export default function HomePage() {
   return (
