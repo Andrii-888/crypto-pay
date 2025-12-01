@@ -1,3 +1,5 @@
+// src/components/demo/ProductCard.tsx
+
 import Image from "next/image";
 import type { Product } from "./demoCartTypes";
 
@@ -8,69 +10,49 @@ type ProductCardProps = {
 
 export function ProductCard({ product, onAddToCart }: ProductCardProps) {
   return (
-    <button
-      type="button"
-      onClick={() => onAddToCart(product)}
-      className="
-        group flex flex-col items-stretch
-        rounded-xl border border-slate-200 bg-white
-        shadow-sm
-        hover:shadow-md hover:border-slate-300
-        active:shadow-md active:border-slate-400 active:scale-[0.98]
-        transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]
-        text-left
-      "
-    >
-      {/* Картинка товара с аккуратным соотношением сторон */}
-      <div className="relative w-full pt-[40%] overflow-hidden rounded-t-xl bg-slate-100">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <img
-            src={product.imageSrc}
-            alt={product.name}
-            className="h-[85%] w-auto object-contain"
-          />
-        </div>
+    <article className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+      {/* Изображение товара — немного меньше и стабильное по высоте */}
+      <div className="relative aspect-4/4 w-full overflow-hidden rounded-t-xl bg-slate-100">
+        <Image
+          src={product.imageSrc}
+          alt={product.name}
+          fill
+          sizes="(min-width: 1024px) 260px, (min-width: 640px) 50vw, 100vw"
+          className="object-cover"
+          priority={product.id <= 2}
+        />
       </div>
-
-      {/* Текстовая часть */}
-      <div className="p-4 flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-slate-900">{product.name}</h2>
-          <span className="text-sm font-semibold text-slate-900">
+      {/* Контент карточки */}
+      <div className="flex flex-1 flex-col p-4 gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="text-sm font-medium text-slate-900 line-clamp-2">
+            {product.name}
+          </h2>
+          <span className="shrink-0 text-sm font-semibold text-slate-900">
             €{product.price.toFixed(2)}
           </span>
         </div>
 
-        <p className="text-xs text-slate-500">{product.description}</p>
+        <p className="text-xs text-slate-500 line-clamp-2">
+          {product.description}
+        </p>
 
-        {/* Низ карточки — отклик на тап */}
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <span
-            className="
-              relative inline-flex items-center
-              rounded-full bg-slate-100
-              px-2.5 py-1
-              text-[11px] font-medium
-              text-slate-700
-              transition-colors
-              group-active:bg-emerald-500 group-active:text-white
-            "
-          >
-            <span className="group-active:hidden">Tap to add to cart</span>
-            <span className="hidden group-active:inline">Added to cart</span>
-          </span>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          {/* Маленький бейдж вместо + Add item */}
+          <div className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600">
+            In stock · Ships in 24h
+          </div>
 
-          <span
-            className="
-              text-[11px] text-slate-400
-              group-hover:text-slate-500
-              transition-colors
-            "
+          {/* Реальная кнопка добавления в корзину */}
+          <button
+            type="button"
+            onClick={() => onAddToCart(product)}
+            className="inline-flex items-center justify-center rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-slate-800 active:scale-[0.97] transition"
           >
-            + Add item
-          </span>
+            Add to cart
+          </button>
         </div>
       </div>
-    </button>
+    </article>
   );
 }

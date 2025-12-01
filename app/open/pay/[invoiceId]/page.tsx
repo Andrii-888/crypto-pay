@@ -1,35 +1,143 @@
-import { getInvoice } from "@/lib/invoiceStore";
-import PaymentWidget from "@/components/payments/PaymentWidget";
+import { getInvoice, type InvoiceData } from "@/lib/invoiceStore";
 
-export default async function PaymentPage(props: {
+type PageProps = {
   params: Promise<{ invoiceId: string }>;
-}) {
+  searchParams: Promise<{
+    amount?: string | string[];
+    fiat?: string | string[];
+    crypto?: string | string[];
+  }>;
+};
+
+function normalizeParam(value?: string | string[]): string | undefined {
+  if (!value) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function PaymentPage(props: PageProps) {
   const { invoiceId } = await props.params;
+  const sp = await props.searchParams;
 
-  const invoice = getInvoice(invoiceId);
+  // 1) Пытаемся взять инвойс из in-memory store (локальная разработка)
+  let invoice = getInvoice(invoiceId);
 
+  // 2) Если в store нет (типичный случай на Vercel),
+  //   пробуем собрать "мок-инвойс" из query-параметров
+  if (!invoice) {
+    const rawAmount = normalizeParam(sp.amount);
+    const rawFiat = normalizeParam(sp.fiat);
+    const rawCrypto = normalizeParam(sp.crypto);
+
+    const parsedAmount = rawAmount ? Number(rawAmount) : 0;
+
+    if (parsedAmount > 0 && rawFiat) {
+      const fallback: InvoiceData = {
+        invoiceId,
+        fiatAmount: parsedAmount,
+        fiatCurrency: rawFiat,
+        cryptoCurrency: (rawCrypto as string) || "USDT",
+        cryptoAmount: parsedAmount,
+        status: "waiting",
+        expiresAt: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
+        paymentUrl: `/open/pay/${invoiceId}`,
+      };
+
+      invoice = fallback;
+    }
+  }
+
+  // 3) Если всё равно нет данных — значит ссылка реально битая
   if (!invoice) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm px-6 py-4 text-center">
-          <h2 className="text-lg font-semibold text-slate-900">
+      <main className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="max-w-md w-full text-center space-y-3">
+          <h1 className="text-xl font-semibold text-slate-900">
             Invoice not found
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            The payment link is invalid or the demo server was restarted.
+          </h1>
+          <p className="text-sm text-slate-500">
+            The payment link is invalid or expired. Please go back to the store
+            and create a new payment.
           </p>
         </div>
-      </div>
+      </main>
     );
   }
 
+  // 4) Красивый экран оплаты (без интерактива пока)
+  const { fiatAmount, fiatCurrency, cryptoAmount, cryptoCurrency } = invoice;
+
   return (
-    <PaymentWidget
-      invoiceId={invoice.invoiceId}
-      fiatAmount={invoice.fiatAmount}
-      fiatCurrency={invoice.fiatCurrency}
-      cryptoAmount={invoice.cryptoAmount}
-      cryptoCurrency={invoice.cryptoCurrency}
-    />
+    <main className="min-h-screen bg-slate-50">
+      <div className="max-w-xl mx-auto px-4 py-8 lg:py-10">
+        {/* Header */}
+        <header className="mb-6 flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Crypto Pay checkout
+            </h1>
+            <p className="mt-1 text-xs text-slate-500">
+              Pay securely with USDT / USDC using your own wallet. This is a
+              demo payment page powered by a Swiss partner.
+            </p>
+          </div>
+          <span className="text-[11px] text-slate-400">
+            Invoice ID:{" "}
+            <span className="font-mono text-slate-600">
+              {invoice.invoiceId}
+            </span>
+          </span>
+        </header>
+
+        <div className="space-y-4">
+          {/* Amount card */}
+          <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">Order amount</span>
+              <span className="text-lg font-semibold text-slate-900">
+                {fiatCurrency} {fiatAmount.toFixed(2)}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">To pay in crypto</span>
+              <span className="text-base font-semibold text-slate-900">
+                {cryptoAmount.toFixed(2)} {cryptoCurrency}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              The final crypto amount is calculated based on the current rate.
+              In a real integration this would match the provider’s locked
+              price.
+            </p>
+          </section>
+
+          {/* Wallet info (пока статичный адрес) */}
+          <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Wallet address (demo)
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                In production this address is generated by the Swiss payment
+                provider. Here we show a static placeholder.
+              </p>
+            </div>
+
+            <div className="rounded-md bg-slate-900 text-slate-50 text-xs font-mono px-3 py-2 break-all">
+              0x1234...DEMO...5678
+            </div>
+
+            <ul className="list-disc list-inside text-[11px] text-slate-500 space-y-1">
+              <li>Always double-check the address and network.</li>
+              <li>For large payments, send a small test transaction first.</li>
+              <li>
+                This page is for demo purposes — no real funds are processed.
+              </li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    </main>
   );
 }

@@ -13,6 +13,7 @@ export async function POST(request: Request) {
 
   const invoiceId = `inv_${Date.now()}`;
 
+  // Пока что крипта = 1:1 к фиату (потом подключим реальный курс)
   const cryptoCurrency = "USDT";
   const cryptoAmount = amount;
 
@@ -24,7 +25,14 @@ export async function POST(request: Request) {
     cryptoAmount,
     status: "waiting",
     expiresAt: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
-    paymentUrl: `/open/pay/${invoiceId}`,
+
+    // 🔹 ХАК: передаём данные в query-параметрах, чтобы страница
+    // могла собрать "мок-инвойс" даже на Vercel, где нет общей памяти
+    paymentUrl: `/open/pay/${invoiceId}?amount=${cryptoAmount.toFixed(
+      2
+    )}&fiat=${encodeURIComponent(fiatCurrency)}&crypto=${encodeURIComponent(
+      cryptoCurrency
+    )}`,
   };
 
   saveInvoice(invoice);
