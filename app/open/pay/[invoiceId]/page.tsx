@@ -1,4 +1,9 @@
 import { getInvoice, type InvoiceData } from "@/lib/invoiceStore";
+import { CryptoPayWalletSection } from "@/components/cryptoPay/CryptoPayWalletSection";
+import { CryptoPayHeader } from "@/components/cryptoPay/CryptoPayHeader";
+import { CryptoPayAmountCard } from "@/components/cryptoPay/CryptoPayAmountCard";
+import { CryptoPayTimer } from "@/components/cryptoPay/CryptoPayTimer";
+import { CryptoPayStatusBadge } from "@/components/cryptoPay/CryptoPayStatusBadge";
 
 type PageProps = {
   params: Promise<{ invoiceId: string }>;
@@ -22,7 +27,7 @@ export default async function PaymentPage(props: PageProps) {
   let invoice = getInvoice(invoiceId);
 
   // 2) Если в store нет (типичный случай на Vercel),
-  //   пробуем собрать "мок-инвойс" из query-параметров
+  //    пробуем собрать "мок-инвойс" из query-параметров
   if (!invoice) {
     const rawAmount = normalizeParam(sp.amount);
     const rawFiat = normalizeParam(sp.fiat);
@@ -63,79 +68,76 @@ export default async function PaymentPage(props: PageProps) {
     );
   }
 
-  // 4) Красивый экран оплаты (без интерактива пока)
-  const { fiatAmount, fiatCurrency, cryptoAmount, cryptoCurrency } = invoice;
+  // 4) Красивый экран оплаты
+  const {
+    fiatAmount,
+    fiatCurrency,
+    cryptoAmount,
+    cryptoCurrency,
+    expiresAt,
+    status,
+  } = invoice;
+
+  // Ссылка назад на checkout с той же суммой
+  const checkoutHref = `/checkout?amount=${encodeURIComponent(
+    fiatAmount.toFixed(2)
+  )}`;
 
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-xl mx-auto px-4 py-8 lg:py-10">
+        {/* Back link */}
+        <div className="mb-3">
+          <a
+            href={checkoutHref}
+            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition"
+          >
+            <span className="text-sm">←</span>
+            <span>Back to checkout</span>
+          </a>
+        </div>
+
         {/* Header */}
-        <header className="mb-6 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Crypto Pay checkout
-            </h1>
-            <p className="mt-1 text-xs text-slate-500">
-              Pay securely with USDT / USDC using your own wallet. This is a
-              demo payment page powered by a Swiss partner.
-            </p>
-          </div>
-          <span className="text-[11px] text-slate-400">
-            Invoice ID:{" "}
-            <span className="font-mono text-slate-600">
-              {invoice.invoiceId}
-            </span>
-          </span>
-        </header>
+        <CryptoPayHeader invoiceId={invoice.invoiceId} />
+
+        {/* Статус инвойса */}
+        <CryptoPayStatusBadge
+          expiresAt={expiresAt}
+          initialStatus={status as "waiting" | "confirmed" | "expired"}
+        />
 
         <div className="space-y-4">
           {/* Amount card */}
-          <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-500">Order amount</span>
-              <span className="text-lg font-semibold text-slate-900">
-                {fiatCurrency} {fiatAmount.toFixed(2)}
-              </span>
-            </div>
+          <CryptoPayAmountCard
+            fiatAmount={fiatAmount}
+            fiatCurrency={fiatCurrency}
+            cryptoAmount={cryptoAmount}
+            cryptoCurrency={cryptoCurrency}
+          />
 
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-500">To pay in crypto</span>
-              <span className="text-base font-semibold text-slate-900">
-                {cryptoAmount.toFixed(2)} {cryptoCurrency}
-              </span>
-            </div>
+          {/* Timer под суммой */}
+          <CryptoPayTimer expiresAt={expiresAt} />
 
-            <p className="text-[11px] text-slate-400">
-              The final crypto amount is calculated based on the current rate.
-              In a real integration this would match the provider’s locked
-              price.
+          {/* Wallet info — отдельный умный компонент */}
+          <CryptoPayWalletSection
+            cryptoCurrency={cryptoCurrency}
+            cryptoAmount={cryptoAmount}
+          />
+
+          {/* Demo переход на success-страницу */}
+          <div className="pt-2 text-center">
+            <a
+              href="/open/pay/success"
+              className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition"
+            >
+              <span>I have sent the payment (demo)</span>
+              <span className="text-xs">→</span>
+            </a>
+            <p className="mt-1 text-[10px] text-slate-400">
+              In a real integration, this step is triggered automatically after
+              the Swiss provider confirms your on-chain payment.
             </p>
-          </section>
-
-          {/* Wallet info (пока статичный адрес) */}
-          <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                Wallet address (demo)
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                In production this address is generated by the Swiss payment
-                provider. Here we show a static placeholder.
-              </p>
-            </div>
-
-            <div className="rounded-md bg-slate-900 text-slate-50 text-xs font-mono px-3 py-2 break-all">
-              0x1234...DEMO...5678
-            </div>
-
-            <ul className="list-disc list-inside text-[11px] text-slate-500 space-y-1">
-              <li>Always double-check the address and network.</li>
-              <li>For large payments, send a small test transaction first.</li>
-              <li>
-                This page is for demo purposes — no real funds are processed.
-              </li>
-            </ul>
-          </section>
+          </div>
         </div>
       </div>
     </main>
