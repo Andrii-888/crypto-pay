@@ -1,3 +1,4 @@
+// src/components/checkout/CheckoutClient.tsx
 "use client";
 
 import { useState } from "react";
@@ -79,9 +80,9 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="max-w-3xl mx-auto px-4 py-10 lg:py-12">
+      <div className="max-w-xl mx-auto px-4 py-10 lg:py-12">
         {/* Header */}
-        <header className="mb-6">
+        <header className="mb-8">
           <button
             type="button"
             onClick={() => router.push("/")}
@@ -95,52 +96,67 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
             Checkout
           </h1>
           <p className="mt-1 text-sm text-slate-500 max-w-lg">
-            Confirm your order details before proceeding to Crypto Pay — a
-            crypto-friendly payment experience powered by a Swiss partner.
+            Review your order and continue to Crypto Pay — a crypto-friendly
+            payment flow where the payment itself is processed by a regulated
+            Swiss partner. You always pay from your own wallet; funds are never
+            held on this website.
           </p>
         </header>
 
         <div className="space-y-6">
           {/* Order summary */}
-          <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-900">
                 Order summary
               </h2>
               <span className="text-xs text-slate-500">Demo checkout</span>
             </div>
+
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-500">Total amount</span>
               <span className="text-lg font-semibold text-slate-900">
                 €{displayAmount}
               </span>
             </div>
+
             <p className="text-xs text-slate-400">
-              This is a demo. Taxes, shipping and discounts are not applied.
+              This is a demo environment. Taxes, shipping and discounts are not
+              applied.
             </p>
           </section>
 
           {/* Crypto payment info */}
-          <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4 space-y-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">
                 Crypto payment (Crypto Pay)
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                You will be redirected to a hosted Crypto Pay page, where you
-                can pay with USDT / USDC using your own wallet (MetaMask, Ledger
-                or any compatible wallet).
+                After confirming this step, you will be redirected to a hosted
+                Crypto Pay page. There you can pay with USDT / USDC from your
+                own wallet (MetaMask, Ledger or any compatible wallet), while a
+                Swiss-licensed partner handles the crypto side securely in the
+                background.
               </p>
             </div>
 
             <ul className="list-disc list-inside text-xs text-slate-500 space-y-1">
-              <li>The rate will be locked for a limited time window.</li>
               <li>
-                You&apos;ll see the exact amount in USDT/USDC and the wallet
-                address.
+                The crypto rate for your payment will be locked for a limited
+                time window.
               </li>
               <li>
-                For large payments, you can first send a small test transaction.
+                You&apos;ll see the exact amount in USDT/USDC, the network to
+                use and the wallet address / QR code.
+              </li>
+              <li>
+                Your payment will be marked as completed only after on-chain
+                confirmation by the Swiss partner.
+              </li>
+              <li>
+                For larger or high-risk transfers, an additional AML check may
+                be required in line with Swiss regulations.
               </li>
             </ul>
           </section>
@@ -158,14 +174,16 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
               type="button"
               onClick={handleCreateInvoice}
               disabled={loading || amount <= 0}
-              className="inline-flex items-center justify-center rounded-lg bg-black text-white px-4 py-2.5 text-sm font-medium hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed transition"
+              className="inline-flex items-center justify-center rounded-full bg-black text-white px-4 py-2.5 text-sm font-medium hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed transition"
             >
               {loading ? "Creating invoice..." : "Continue to Crypto Pay"}
             </button>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-slate-400 leading-relaxed">
               By clicking continue, a demo invoice will be created and you will
               be redirected to a Crypto Pay payment page. No real payment will
-              be processed in this demo.
+              be processed in this demo. In a production setup, continuing means
+              you accept our Terms of use, Privacy policy and AML &amp; Risk
+              notice.
             </p>
           </section>
         </div>
