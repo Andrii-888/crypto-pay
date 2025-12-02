@@ -10,9 +10,9 @@ type ProductCardProps = {
 
 export function ProductCard({ product, onAddToCart }: ProductCardProps) {
   return (
-    <article className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-      {/* Изображение товара — немного меньше и стабильное по высоте */}
-      <div className="relative aspect-4/4 w-full overflow-hidden rounded-t-xl bg-slate-100">
+    <article className="group flex flex-col h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+      {/* Изображение товара */}
+      <div className="relative aspect-4/4 w-full overflow-hidden bg-slate-100">
         <Image
           src={product.imageSrc}
           alt={product.name}
@@ -22,28 +22,30 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
           priority={product.id <= 2}
         />
       </div>
-      {/* Контент карточки */}
-      <div className="flex flex-1 flex-col p-4 gap-2">
+
+      {/* Контент */}
+      <div className="flex flex-col flex-1 p-4 gap-2">
+        {/* Название + цена */}
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-sm font-medium text-slate-900 line-clamp-2">
             {product.name}
           </h2>
-          <span className="shrink-0 text-sm font-semibold text-slate-900">
+          <span className="shrink-0 text-sm font-semibold text-slate-900 whitespace-nowrap">
             €{product.price.toFixed(2)}
           </span>
         </div>
 
+        {/* Описание */}
         <p className="text-xs text-slate-500 line-clamp-2">
           {product.description}
         </p>
 
-        <div className="mt-3 flex items-center justify-between gap-3">
-          {/* Маленький бейдж вместо + Add item */}
+        {/* Нижний блок — ПРИЖАТ ЗАДАЧЕЙ К НИЗУ */}
+        <div className="mt-auto pt-3 flex items-center justify-between gap-3">
           <div className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600">
             In stock · Ships in 24h
           </div>
 
-          {/* Реальная кнопка добавления в корзину */}
           <button
             type="button"
             onClick={() => onAddToCart(product)}

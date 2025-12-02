@@ -48,7 +48,7 @@ const PRODUCTS: Product[] = [
     name: "Unknown Gadget",
     price: 49,
     description: "Mystery tech accessory for your setup.",
-    imageSrc: "/products/unknown1.jpeg",
+    imageSrc: "/products/shopping1.jpeg",
   },
 ];
 
@@ -64,13 +64,8 @@ export default function DemoCartPage() {
   }
 
   return (
-    <main
-      className="
-        min-h-screen
-        bg-slate-50
-      "
-    >
-      {/* Верхняя шапка в стиле минимализм */}
+    <main className="min-h-screen bg-slate-50">
+      {/* Top header */}
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -87,17 +82,17 @@ export default function DemoCartPage() {
             </div>
           </div>
 
-          <div className="hidden sm:flex items-center gap-4 text-xs text-slate-500">
+          <nav className="hidden sm:flex items-center gap-4 text-xs text-slate-500">
             <span className="cursor-not-allowed">Store</span>
             <span className="cursor-not-allowed">Support</span>
             <span className="cursor-not-allowed">Account</span>
-          </div>
+          </nav>
         </div>
       </header>
 
-      {/* Основной контент */}
+      {/* Main content */}
       <div className="max-w-6xl mx-auto px-4 py-8 lg:py-10">
-        {/* Заголовок страницы */}
+        {/* Page title */}
         <section className="mb-6 lg:mb-8 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight text-slate-900">
@@ -116,10 +111,10 @@ export default function DemoCartPage() {
           </div>
         </section>
 
-        {/* Сетка: товары + боковая колонка */}
+        {/* Grid: products + sidebar */}
         <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)] lg:gap-10">
-          {/* Секция товаров */}
-          <section className="space-y-3">
+          {/* Products section */}
+          <section>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
               {PRODUCTS.map((product) => (
                 <ProductCard
@@ -131,11 +126,10 @@ export default function DemoCartPage() {
             </div>
           </section>
 
-          {/* Правая колонка: корзина + методы оплаты */}
+          {/* Sidebar: cart + payment methods */}
           <aside className="lg:pt-1">
             <div className="sticky top-20 space-y-4">
               <CartSummary cartTotal={cartTotal} cartCount={cartCount} />
-
               <PaymentMethods hasItems={hasItems} cartTotal={cartTotal} />
             </div>
           </aside>
