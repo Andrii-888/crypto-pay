@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { getInvoice, type InvoiceData } from "@/lib/invoiceStore";
+
 import { CryptoPayWalletSection } from "@/components/cryptoPay/CryptoPayWalletSection";
 import { CryptoPayHeader } from "@/components/cryptoPay/CryptoPayHeader";
 import { CryptoPayAmountCard } from "@/components/cryptoPay/CryptoPayAmountCard";
@@ -23,11 +25,9 @@ export default async function PaymentPage(props: PageProps) {
   const { invoiceId } = await props.params;
   const sp = await props.searchParams;
 
-  // 1) Пытаемся взять инвойс из in-memory store (локальная разработка)
   let invoice = getInvoice(invoiceId);
 
-  // 2) Если в store нет (типичный случай на Vercel),
-  //    пробуем собрать "мок-инвойс" из query-параметров
+  // Если инвойса нет — создаём fallback (демо)
   if (!invoice) {
     const rawAmount = normalizeParam(sp.amount);
     const rawFiat = normalizeParam(sp.fiat);
@@ -51,7 +51,7 @@ export default async function PaymentPage(props: PageProps) {
     }
   }
 
-  // 3) Если всё равно нет данных — значит ссылка реально битая
+  // Если нет данных вообще
   if (!invoice) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
@@ -68,7 +68,6 @@ export default async function PaymentPage(props: PageProps) {
     );
   }
 
-  // 4) Красивый экран оплаты
   const {
     fiatAmount,
     fiatCurrency,
@@ -78,7 +77,7 @@ export default async function PaymentPage(props: PageProps) {
     status,
   } = invoice;
 
-  // Ссылка назад на checkout с той же суммой
+  // Ссылка назад на checkout
   const checkoutHref = `/checkout?amount=${encodeURIComponent(
     fiatAmount.toFixed(2)
   )}`;
@@ -86,28 +85,27 @@ export default async function PaymentPage(props: PageProps) {
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-xl mx-auto px-4 py-8 lg:py-10">
-        {/* Back link */}
+        {/* Back link (Next.js Link) */}
         <div className="mb-3">
-          <a
+          <Link
             href={checkoutHref}
             className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition"
           >
             <span className="text-sm">←</span>
             <span>Back to checkout</span>
-          </a>
+          </Link>
         </div>
 
         {/* Header */}
         <CryptoPayHeader invoiceId={invoice.invoiceId} />
 
-        {/* Статус инвойса */}
+        {/* Status */}
         <CryptoPayStatusBadge
           expiresAt={expiresAt}
           initialStatus={status as "waiting" | "confirmed" | "expired"}
         />
 
         <div className="space-y-4">
-          {/* Amount card */}
           <CryptoPayAmountCard
             fiatAmount={fiatAmount}
             fiatCurrency={fiatCurrency}
@@ -115,29 +113,12 @@ export default async function PaymentPage(props: PageProps) {
             cryptoCurrency={cryptoCurrency}
           />
 
-          {/* Timer под суммой */}
           <CryptoPayTimer expiresAt={expiresAt} />
 
-          {/* Wallet info — отдельный умный компонент */}
           <CryptoPayWalletSection
             cryptoCurrency={cryptoCurrency}
             cryptoAmount={cryptoAmount}
           />
-
-          {/* Demo переход на success-страницу */}
-          <div className="pt-2 text-center">
-            <a
-              href="/open/pay/success"
-              className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition"
-            >
-              <span>I have sent the payment (demo)</span>
-              <span className="text-xs">→</span>
-            </a>
-            <p className="mt-1 text-[10px] text-slate-400">
-              In a real integration, this step is triggered automatically after
-              the Swiss provider confirms your on-chain payment.
-            </p>
-          </div>
         </div>
       </div>
     </main>

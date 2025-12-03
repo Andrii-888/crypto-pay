@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { CryptoPayQrBox } from "./CryptoPayQrBox";
 
 type CryptoPayWalletSectionProps = {
@@ -42,7 +43,7 @@ export function CryptoPayWalletSection({
 
   const network = NETWORKS[activeNet];
   const formattedAmount = `${cryptoAmount.toFixed(2)} ${cryptoCurrency}`;
-  const qrValue = network.address; // динамический QR по адресу сети
+  const qrValue = network.address;
 
   async function handleCopy() {
     try {
@@ -50,7 +51,7 @@ export function CryptoPayWalletSection({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      // тихо игнорируем, чтобы не ломать UX
+      // ignore
     }
   }
 
@@ -92,7 +93,7 @@ export function CryptoPayWalletSection({
         </button>
       </div>
 
-      {/* Network description */}
+      {/* Description */}
       <div className="text-xs text-slate-600">
         <p className="font-medium">{network.description}</p>
       </div>
@@ -100,10 +101,12 @@ export function CryptoPayWalletSection({
       {/* Address + Copy */}
       <div className="space-y-1 text-xs">
         <p className="text-[11px] text-slate-500">Payment address</p>
+
         <div className="flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-slate-50">
           <span className="font-mono text-[11px] truncate">
             {network.address}
           </span>
+
           <button
             type="button"
             onClick={handleCopy}
@@ -112,27 +115,41 @@ export function CryptoPayWalletSection({
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
+
         <p className="text-[11px] text-slate-400">
           Send only USDT on <span className="font-medium">{network.code}</span>{" "}
           to this address.
         </p>
       </div>
 
-      {/* QR-код в Apple-стиле */}
+      {/* QR */}
       <CryptoPayQrBox value={qrValue} />
 
       {/* Notices */}
       <ul className="list-disc list-inside text-[11px] text-slate-500 space-y-1 pt-1">
         <li>Always double-check the address and selected network.</li>
+        <li>For larger payments, send a small test transaction first.</li>
         <li>
-          For larger payments, you can first send a small test transaction.
-        </li>
-        <li>
-          This is a demo front-end. In production, the crypto payment is
-          processed by a regulated Swiss partner; no funds are ever stored on
-          this website.
+          This is a demo. In production, payments are processed by a Swiss
+          regulated partner.
         </li>
       </ul>
+
+      {/* Apple-style CTA → SUCCESS (demo) */}
+      <Link
+        href="/open/pay/success"
+        className="
+          w-full flex items-center justify-center gap-1
+          bg-black text-white 
+          font-medium text-sm 
+          py-2.5 rounded-xl
+          hover:bg-slate-900 active:scale-[0.98]
+          transition shadow-sm mt-2
+        "
+      >
+        I have sent the payment (demo)
+        <span className="text-lg leading-none">→</span>
+      </Link>
     </section>
   );
 }
