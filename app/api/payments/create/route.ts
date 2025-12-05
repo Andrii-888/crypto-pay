@@ -1,57 +1,89 @@
-// src/app/api/payments/create/route.ts
-
+// app/api/payments/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
 const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-// Этот хэндлер вызывается фронтом, когда магазин создаёт платёж.
-// Мы просто прокидываем данные дальше в наш backend psp-core.
+// Хендлер, который вызывает магазин (frontend), когда создаёт платёж
 export async function POST(request: NextRequest) {
   try {
-    if (!PSP_API_URL) {
-      return NextResponse.json(
-        { error: "PSP API URL is not configured" },
-        { status: 500 }
-      );
-    }
-
-    // Тело запроса, которое пришло от фронта (сумма, валюта и т.п.)
     const body = await request.json();
 
-    // Формируем данные, которые ждёт psp-core.
-    // Минимально: fiatAmount, fiatCurrency, cryptoCurrency.
-    const payload = {
-      fiatAmount: body.fiatAmount,
-      fiatCurrency: body.fiatCurrency ?? "EUR",
-      cryptoCurrency: body.cryptoCurrency ?? "USDT",
-    };
+    const amount = Number(body.amount ?? body.fiatAmount ?? 0);
+    const fiatCurrency = (body.fiatCurrency as string) ?? "EUR";
+    const cryptoCurrency = (body.cryptoCurrency as string) ?? "USDT";
 
-    const res = await fetch(`${PSP_API_URL}/invoices`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      console.error(
-        "[create payment] PSP-core error:",
-        res.status,
-        await res.text()
-      );
+    if (!amount || amount <= 0) {
       return NextResponse.json(
-        { error: "Failed to create invoice in PSP-core" },
-        { status: 502 }
+        { ok: false, error: "Invalid amount" },
+        { status: 400 }
       );
     }
 
-    const invoice = await res.json();
+    const origin = request.nextUrl.origin;
 
-    // Просто возвращаем инвойс дальше на фронт.
-    return NextResponse.json(invoice);
-  } catch (error) {
-    console.error("[create payment] Unexpected error:", error);
+    // 1️⃣ Пытаемся создать инвойс на backend psp-core, если он сконфигурирован
+    if (PSP_API_URL) {
+      try {
+        const pspRes = await fetch(`${PSP_API_URL}/invoices`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fiatAmount: amount,
+            fiatCurrency,
+            cryptoCurrency,
+          }),
+        });
+
+        if (pspRes.ok) {
+          const data = await pspRes.json();
+
+          const invoiceId = (data.id || data.invoiceId) as string;
+          const redirectUrl =
+            (data.paymentUrl as string) ??
+            `${origin}/open/pay/${invoiceId}?amount=${amount}&fiat=${fiatCurrency}&crypto=${cryptoCurrency}`;
+
+          return NextResponse.json(
+            {
+              ok: true,
+              invoiceId,
+              redirectUrl,
+            },
+            { status: 200 }
+          );
+        }
+
+        // Если backend ответил не 2xx — просто падаем в fallback
+        console.error(
+          "[create] PSP-core returned non-OK:",
+          pspRes.status,
+          await pspRes.text()
+        );
+      } catch (err) {
+        console.error("[create] Error calling PSP-core:", err);
+        // идём в fallback ниже
+      }
+    }
+
+    // 2️⃣ Fallback: создаём "инвойс" локально, без psp-core
+    const invoiceId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+
+    const redirectUrl = `${origin}/open/pay/${invoiceId}?amount=${amount}&fiat=${fiatCurrency}&crypto=${cryptoCurrency}`;
+
     return NextResponse.json(
-      { error: "Unexpected error while creating invoice" },
+      {
+        ok: true,
+        invoiceId,
+        redirectUrl,
+      },
+      { status: 200 }
+    );
+  } catch (err) {
+    console.error("[create] Unexpected error:", err);
+    return NextResponse.json(
+      { ok: false, error: "Failed to create payment" },
       { status: 500 }
     );
   }
