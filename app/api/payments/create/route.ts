@@ -1,7 +1,8 @@
 // app/api/payments/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
-// ВРЕМЕННЫЙ stub: работаем без psp-core
+// ВРЕМЕННЫЙ стабильный вариант: без реального psp-core,
+// всегда ведём клиента на нашу hosted-страницу /open/pay/[invoiceId]
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -19,23 +20,20 @@ export async function POST(request: NextRequest) {
 
     const origin = request.nextUrl.origin;
 
-    // Генерируем фейковый invoiceId
+    // Генерируем локальный invoiceId
     const invoiceId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 
-    // URL нашей hosted-страницы оплаты
+    // ❗ ВСЕГДА ведём на наш домен, НЕ на Render / бэк
     const paymentUrl = `${origin}/open/pay/${invoiceId}?amount=${amount}&fiat=${fiatCurrency}&crypto=${cryptoCurrency}`;
 
-    // ⚠️ ВАЖНО: вернуть именно paymentUrl, как ждёт фронт
     return NextResponse.json(
       {
         ok: true,
         invoiceId,
-        paymentUrl, // ← ключевое поле
-        // можно оставить и alias, если хочешь:
-        redirectUrl: paymentUrl,
+        paymentUrl,
       },
       { status: 200 }
     );
