@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-const PSP_API_URL = process.env.NEXT_PUBLIC_PSP_API_URL;
+const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // Этот хэндлер вызывается фронтом, когда магазин создаёт платёж.
 // Мы просто прокидываем данные дальше в наш backend psp-core.

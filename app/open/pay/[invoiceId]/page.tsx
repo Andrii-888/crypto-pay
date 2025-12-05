@@ -9,8 +9,9 @@ import { CryptoPayAmountCard } from "@/components/cryptoPay/CryptoPayAmountCard"
 import { CryptoPayTimer } from "@/components/cryptoPay/CryptoPayTimer";
 import { CryptoPayStatusBadge } from "@/components/cryptoPay/CryptoPayStatusBadge";
 
-const PSP_API_URL =
-  process.env.NEXT_PUBLIC_PSP_API_URL ?? "http://localhost:3000";
+const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
+console.log("[open/pay] PSP_API_URL =", PSP_API_URL);
 
 type PspInvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
