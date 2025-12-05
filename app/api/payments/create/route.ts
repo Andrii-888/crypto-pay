@@ -1,9 +1,7 @@
 // app/api/payments/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
-const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-// Хендлер, который вызывает магазин (frontend), когда создаёт платёж
+// ВРЕМЕННЫЙ stub: работаем без psp-core
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -21,62 +19,23 @@ export async function POST(request: NextRequest) {
 
     const origin = request.nextUrl.origin;
 
-    // 1️⃣ Пытаемся создать инвойс на backend psp-core, если он сконфигурирован
-    if (PSP_API_URL) {
-      try {
-        const pspRes = await fetch(`${PSP_API_URL}/invoices`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fiatAmount: amount,
-            fiatCurrency,
-            cryptoCurrency,
-          }),
-        });
-
-        if (pspRes.ok) {
-          const data = await pspRes.json();
-
-          const invoiceId = (data.id || data.invoiceId) as string;
-          const redirectUrl =
-            (data.paymentUrl as string) ??
-            `${origin}/open/pay/${invoiceId}?amount=${amount}&fiat=${fiatCurrency}&crypto=${cryptoCurrency}`;
-
-          return NextResponse.json(
-            {
-              ok: true,
-              invoiceId,
-              redirectUrl,
-            },
-            { status: 200 }
-          );
-        }
-
-        // Если backend ответил не 2xx — просто падаем в fallback
-        console.error(
-          "[create] PSP-core returned non-OK:",
-          pspRes.status,
-          await pspRes.text()
-        );
-      } catch (err) {
-        console.error("[create] Error calling PSP-core:", err);
-        // идём в fallback ниже
-      }
-    }
-
-    // 2️⃣ Fallback: создаём "инвойс" локально, без psp-core
+    // Генерируем фейковый invoiceId
     const invoiceId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 
-    const redirectUrl = `${origin}/open/pay/${invoiceId}?amount=${amount}&fiat=${fiatCurrency}&crypto=${cryptoCurrency}`;
+    // URL нашей hosted-страницы оплаты
+    const paymentUrl = `${origin}/open/pay/${invoiceId}?amount=${amount}&fiat=${fiatCurrency}&crypto=${cryptoCurrency}`;
 
+    // ⚠️ ВАЖНО: вернуть именно paymentUrl, как ждёт фронт
     return NextResponse.json(
       {
         ok: true,
         invoiceId,
-        redirectUrl,
+        paymentUrl, // ← ключевое поле
+        // можно оставить и alias, если хочешь:
+        redirectUrl: paymentUrl,
       },
       { status: 200 }
     );
