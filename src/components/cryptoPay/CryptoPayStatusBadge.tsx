@@ -1,8 +1,10 @@
+// src/components/cryptoPay/CryptoPayStatusBadge.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 
-type CryptoPayStatus = "waiting" | "confirmed" | "expired";
+// Добавили "rejected" к статусам
+type CryptoPayStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
 type CryptoPayStatusBadgeProps = {
   expiresAt: string;
@@ -30,9 +32,10 @@ export function CryptoPayStatusBadge({
     return () => clearInterval(id);
   }, [expiresAt]);
 
-  // Если время вышло и платёж не был "confirmed" — помечаем как expired
+  // Если время вышло и платёж всё ещё "waiting" — помечаем как expired
+  // (но НЕ трогаем confirmed и rejected)
   useEffect(() => {
-    if (expired && status !== "confirmed") {
+    if (expired && status === "waiting") {
       setStatus("expired");
     }
   }, [expired, status]);
@@ -49,6 +52,11 @@ export function CryptoPayStatusBadge({
       break;
     case "expired":
       label = "Invoice expired — create a new payment link";
+      bgClass = "bg-slate-100 text-slate-700";
+      dotClass = "bg-slate-400";
+      break;
+    case "rejected":
+      label = "Payment rejected — please contact support or create a new link";
       bgClass = "bg-red-50 text-red-700";
       dotClass = "bg-red-400";
       break;

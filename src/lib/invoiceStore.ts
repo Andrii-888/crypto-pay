@@ -1,6 +1,11 @@
 // src/lib/invoiceStore.ts
 
-export type InvoiceStatus = "waiting" | "pending" | "confirmed" | "expired";
+export type InvoiceStatus =
+  | "waiting"
+  | "pending"
+  | "confirmed"
+  | "expired"
+  | "rejected";
 
 export type InvoiceData = {
   invoiceId: string;
