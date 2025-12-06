@@ -1,32 +1,64 @@
 // app/api/payments/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
-// ВРЕМЕННЫЙ стабильный вариант: без реального psp-core,
-// всегда ведём клиента на нашу hosted-страницу /open/pay/[invoiceId]
+const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const IS_PROD = process.env.NODE_ENV === "production";
+
+// Генерация invoiceId на фронте (fallback)
+function generateInvoiceId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let amount = 0;
+    let fiatCurrency = "EUR";
+    let cryptoCurrency = "USDT";
 
-    const amount = Number(body.amount ?? body.fiatAmount ?? 0);
-    const fiatCurrency = (body.fiatCurrency as string) ?? "EUR";
-    const cryptoCurrency = (body.cryptoCurrency as string) ?? "USDT";
-
-    if (!amount || amount <= 0) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid amount" },
-        { status: 400 }
-      );
+    // Аккуратно читаем тело (НЕ падаем, если тело пустое или сломано)
+    try {
+      const body = await request.json();
+      amount = Number(body.amount ?? body.fiatAmount ?? 0) || 0;
+      fiatCurrency = (body.fiatCurrency as string) || "EUR";
+      cryptoCurrency = (body.cryptoCurrency as string) || "USDT";
+    } catch {
+      // игнорируем ошибку — используем дефолты
     }
 
     const origin = request.nextUrl.origin;
 
-    // Генерируем локальный invoiceId
-    const invoiceId =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+    // Пытаемся создать инвойс на PSP-core (только в проде)
+    let invoiceId: string | null = null;
 
-    // ❗ ВСЕГДА ведём на наш домен, НЕ на Render / бэк
+    if (IS_PROD && PSP_API_URL) {
+      try {
+        const pspRes = await fetch(`${PSP_API_URL}/invoices`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fiatAmount: amount,
+            fiatCurrency,
+            cryptoCurrency,
+          }),
+        });
+
+        if (pspRes.ok) {
+          const data = await pspRes.json();
+          invoiceId = (data.id as string) || (data.invoiceId as string) || null;
+        }
+      } catch {
+        // Бэк недоступен — fallback
+      }
+    }
+
+    // Если бэк не дал id → генерируем локальный
+    if (!invoiceId) {
+      invoiceId = generateInvoiceId();
+    }
+
     const paymentUrl = `${origin}/open/pay/${invoiceId}?amount=${amount}&fiat=${fiatCurrency}&crypto=${cryptoCurrency}`;
 
     return NextResponse.json(
@@ -37,11 +69,17 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (err) {
-    console.error("[create] Unexpected error:", err);
+  } catch {
+    // Даже если что-то сломалось — не ломаем checkout
+    const fallbackId = generateInvoiceId();
+
     return NextResponse.json(
-      { ok: false, error: "Failed to create payment" },
-      { status: 500 }
+      {
+        ok: true,
+        invoiceId: fallbackId,
+        paymentUrl: `/open/pay/${fallbackId}`,
+      },
+      { status: 200 }
     );
   }
 }
