@@ -99,14 +99,14 @@ export default async function PaymentPage(props: PageProps) {
 
   if (!invoice) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-        <div className="max-w-md w-full text-center space-y-3">
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-md space-y-3 text-center">
           <h1 className="text-xl font-semibold text-slate-900">
             Invoice not found
           </h1>
           <p className="text-sm text-slate-500">
             The payment link is invalid or expired. Please go back to the store
-            and create a new payment.
+            and create a new payment via Crypto Pay.
           </p>
         </div>
       </main>
@@ -132,12 +132,12 @@ export default async function PaymentPage(props: PageProps) {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="max-w-xl mx-auto px-4 py-8 lg:py-10">
+      <div className="mx-auto max-w-xl px-4 py-8 lg:py-10">
         {/* Back link */}
         <div className="mb-3">
           <Link
             href={checkoutHref}
-            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition"
+            className="inline-flex items-center gap-1 text-xs text-slate-500 transition hover:text-slate-800"
           >
             <span className="text-sm">←</span>
             <span>Back to checkout</span>
@@ -155,14 +155,15 @@ export default async function PaymentPage(props: PageProps) {
         />
 
         {/* Верхний блок с summary */}
-        <div className="mt-3 mb-4">
+        <div className="mb-4 mt-3">
           {isConfirmed && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              <div className="font-semibold mb-0.5">
+              <div className="mb-0.5 font-semibold">
                 Payment successfully confirmed
               </div>
               <div>
-                The merchant has received your crypto payment. You can safely
+                Your crypto transaction has been confirmed on-chain and settled
+                to the merchant by our Swiss payment partner. You can safely
                 close this page.
               </div>
             </div>
@@ -170,10 +171,10 @@ export default async function PaymentPage(props: PageProps) {
 
           {isFailed && (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-              <div className="font-semibold mb-0.5">Payment not completed</div>
+              <div className="mb-0.5 font-semibold">Payment not completed</div>
               <div>
                 This payment link is no longer valid. Please return to the store
-                checkout and create a new payment.
+                checkout and create a new payment via Crypto Pay.
               </div>
             </div>
           )}
@@ -196,6 +197,16 @@ export default async function PaymentPage(props: PageProps) {
                 cryptoCurrency={cryptoCurrency}
                 cryptoAmount={cryptoAmount}
               />
+
+              {/* Маленький инфо-блок про магазин + Swiss PSP */}
+              <p className="text-[11px] text-center leading-relaxed text-slate-400">
+                You are paying for your order at{" "}
+                <span className="font-medium text-slate-700">Your Store</span>{" "}
+                using <span className="font-medium">Crypto Pay</span>, the
+                store&apos;s crypto-friendly payment method. The crypto leg of
+                this transaction is processed by a regulated Swiss payment
+                partner, while the merchant receives the final amount in fiat.
+              </p>
             </>
           )}
         </div>
