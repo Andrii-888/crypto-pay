@@ -15,6 +15,11 @@ type ErrorBody = {
   details?: string;
 };
 
+type PspConfirmResponse = {
+  id?: string;
+  status?: string;
+};
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => null)) as {
@@ -32,7 +37,7 @@ export async function POST(req: Request) {
       const res: ErrorBody = {
         ok: false,
         error: "PSP_API_URL is empty",
-        details: "Set NEXT_PUBLIC_API_URL=http://localhost:3000",
+        details: "Set NEXT_PUBLIC_API_URL",
       };
       return NextResponse.json(res, { status: 500 });
     }
@@ -40,9 +45,7 @@ export async function POST(req: Request) {
     // ✅ Реально подтверждаем инвойс в psp-core
     const confirmRes = await fetch(
       `${PSP_API_URL}/invoices/${invoiceId}/confirm`,
-      {
-        method: "POST",
-      }
+      { method: "POST" }
     );
 
     if (!confirmRes.ok) {
@@ -55,12 +58,14 @@ export async function POST(req: Request) {
       return NextResponse.json(res, { status: 502 });
     }
 
-    const data = (await confirmRes.json().catch(() => null)) as any;
+    const data = (await confirmRes
+      .json()
+      .catch(() => ({}))) as PspConfirmResponse;
 
     const res: SuccessBody = {
       ok: true,
-      invoiceId: data?.id ?? invoiceId,
-      status: data?.status ?? "confirmed",
+      invoiceId: data.id ?? invoiceId,
+      status: data.status ?? "confirmed",
     };
 
     return NextResponse.json(res, { status: 200 });

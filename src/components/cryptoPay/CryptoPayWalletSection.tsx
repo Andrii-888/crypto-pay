@@ -34,6 +34,20 @@ const NETWORKS: Record<
   },
 };
 
+type SimulatePaidOk = {
+  ok: true;
+  invoiceId: string;
+  status: string;
+};
+
+type SimulatePaidError = {
+  ok: false;
+  error: string;
+  details?: string;
+};
+
+type SimulatePaidResponse = SimulatePaidOk | SimulatePaidError;
+
 export function CryptoPayWalletSection({
   cryptoCurrency,
   cryptoAmount,
@@ -73,16 +87,29 @@ export function CryptoPayWalletSection({
         body: JSON.stringify({ invoiceId }),
       });
 
-      const data = (await res.json().catch(() => ({}))) as any;
+      const data = (await res
+        .json()
+        .catch(() => ({ ok: false, error: "Invalid JSON response" }))) as
+        | SimulatePaidResponse
+        | { ok: false; error: string; message?: string };
 
       if (!res.ok) {
-        throw new Error(
-          data?.message || data?.error || `Request failed: HTTP ${res.status}`
-        );
+        const message =
+          "message" in data && typeof data.message === "string"
+            ? data.message
+            : "error" in data && typeof data.error === "string"
+            ? data.error
+            : `Request failed: HTTP ${res.status}`;
+
+        throw new Error(message);
       }
 
-      if (data?.ok === false) {
-        throw new Error(data?.message || data?.error || "Simulate paid failed");
+      if ("ok" in data && data.ok === false) {
+        const msg =
+          (data as SimulatePaidError).details ||
+          (data as SimulatePaidError).error ||
+          "Simulate paid failed";
+        throw new Error(msg);
       }
 
       // ✅ Ничего не редиректим вручную.
@@ -186,8 +213,8 @@ export function CryptoPayWalletSection({
         disabled={isConfirming || !invoiceId}
         className="
           w-full flex items-center justify-center gap-1
-          bg-black text-white 
-          font-medium text-sm 
+          bg-black text-white
+          font-medium text-sm
           py-2.5 rounded-xl
           hover:bg-slate-900 active:scale-[0.98]
           transition shadow-sm mt-2

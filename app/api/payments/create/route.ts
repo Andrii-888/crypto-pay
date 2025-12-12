@@ -1,4 +1,3 @@
-// app/api/payments/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
 const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
@@ -15,18 +14,22 @@ function generateInvoiceId() {
   return `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 }
 
+type JsonObject = Record<string, unknown>;
+
 // Универсальный helper для вытаскивания поля из ответа бекенда
 function extractField<T = unknown>(
-  source: any,
+  source: unknown,
   keys: string[],
   fallback?: T
 ): T | undefined {
   if (!source || typeof source !== "object") return fallback;
+  const obj = source as JsonObject;
+
   for (const key of keys) {
-    if (key in source && source[key] != null) {
-      return source[key] as T;
-    }
+    const value = obj[key];
+    if (value != null) return value as T;
   }
+
   return fallback;
 }
 
@@ -39,14 +42,26 @@ export async function POST(request: NextRequest) {
 
     // Аккуратно читаем тело (НЕ падаем, если пусто или битое)
     try {
-      const body = await request.json();
-      amount = Number(body.amount ?? body.fiatAmount ?? body.total ?? 0) || 0;
-      fiatCurrency =
-        (body.fiatCurrency as string) || (body.currency as string) || "EUR";
-      cryptoCurrency =
-        (body.cryptoCurrency as string) || (body.token as string) || "USDT";
+      const body = (await request.json().catch(() => ({}))) as JsonObject;
+
+      amount =
+        Number(extractField(body, ["amount", "fiatAmount", "total"], 0)) || 0;
+
+      fiatCurrency = (extractField<string>(
+        body,
+        ["fiatCurrency", "currency"],
+        "EUR"
+      ) ?? "EUR") as string;
+
+      cryptoCurrency = (extractField<string>(
+        body,
+        ["cryptoCurrency", "token"],
+        "USDT"
+      ) ?? "USDT") as string;
+
       description =
-        (body.description as string) || (body.orderId as string) || undefined;
+        extractField<string>(body, ["description", "orderId"], undefined) ??
+        undefined;
     } catch {
       // оставляем дефолты
     }
@@ -70,7 +85,7 @@ export async function POST(request: NextRequest) {
     let invoiceIdFromBackend: string | null = null;
     let backendStatus: string | null = null;
     let backendError: string | null = null;
-    let backendData: any = null;
+    let backendData: JsonObject | null = null;
 
     // Пытаемся создать инвойс на PSP-core
     if (PSP_API_URL) {
@@ -88,9 +103,8 @@ export async function POST(request: NextRequest) {
 
         backendStatus = `HTTP ${pspRes.status}`;
 
-        const data = await pspRes
-          .json()
-          .catch(() => ({} as Record<string, unknown>));
+        const data = (await pspRes.json().catch(() => ({}))) as JsonObject;
+
         backendData = data;
 
         if (pspRes.ok) {
@@ -98,10 +112,10 @@ export async function POST(request: NextRequest) {
             extractField<string>(data, ["id", "invoiceId", "invoice_id"]) ??
             null;
         } else {
-          backendError =
-            data?.message && typeof data.message === "string"
-              ? data.message
-              : `PSP responded with status ${pspRes.status}`;
+          const msg = extractField<string>(data, ["message"], undefined);
+          backendError = msg
+            ? msg
+            : `PSP responded with status ${pspRes.status}`;
         }
       } catch (err) {
         backendError =
@@ -167,7 +181,7 @@ export async function POST(request: NextRequest) {
         amount: normalizedAmount,
         fiatCurrency: normalizedFiatCurrency,
         cryptoCurrency: normalizedCryptoCurrency,
-        cryptoAmount: cryptoAmount,
+        cryptoAmount,
         expiresAt,
         backendStatus,
         backendError,
