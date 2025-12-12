@@ -1,4 +1,3 @@
-// src/components/demo/DemoCartPage.tsx
 "use client";
 
 import { useState } from "react";
@@ -52,13 +51,6 @@ const PRODUCTS: Product[] = [
   },
 ];
 
-// 🔹 Временно моковый пользователь — чтобы показать, что это "мой аккаунт"
-const MOCK_USER = {
-  name: "Maria B.",
-  email: "maria@example.com",
-  type: "Personal account",
-};
-
 export default function DemoCartPage() {
   const [cartTotal, setCartTotal] = useState(0);
   const [cartCount, setCartCount] = useState(0);
@@ -74,74 +66,68 @@ export default function DemoCartPage() {
     <main className="min-h-screen bg-slate-50">
       {/* Top header */}
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
-        {/* 🔹 Demo ribbon */}
-        <div className="border-b border-slate-200 bg-slate-900 text-[11px] text-slate-100">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-1.5">
-            <span className="uppercase tracking-[0.16em] text-slate-400">
-              DEMO ENVIRONMENT — CRYPTO PAY CHECKOUT
-            </span>
-            <span className="hidden text-[10px] text-slate-400 sm:inline">
-              Test payments only · No real orders are created
-            </span>
-          </div>
-        </div>
-
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-          {/* Left: Store brand */}
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+            <div className="h-9 w-9 rounded-full bg-slate-900 flex items-center justify-center text-xs font-semibold text-white">
               YS
             </div>
+
             <div>
               <div className="text-sm font-semibold tracking-wide text-slate-900">
                 Your Store
               </div>
               <div className="text-xs text-slate-500">
-                Clean tech shopping · Crypto-ready
+                Clean tech shopping · Crypto-friendly store
+              </div>
+
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center gap-1 rounded-full bg-slate-900/5 px-2 py-0.5">
+                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-[10px] font-medium text-slate-700">
+                    Crypto Pay · Crypto-friendly checkout (demo)
+                  </span>
+                </div>
+
+                {/* ✅ Account context (logged in) */}
+                <div className="inline-flex items-center gap-2 rounded-full bg-slate-900/5 px-2 py-0.5">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white text-[10px] font-semibold">
+                    MB
+                  </div>
+                  <span className="text-[10px] font-medium text-slate-700">
+                    Maria Busyhina
+                  </span>
+                  <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700">
+                    Logged in
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Right: nav + account pill */}
-          <div className="flex items-center gap-4">
-            <nav className="hidden items-center gap-4 text-xs text-slate-500 sm:flex">
-              <span className="cursor-not-allowed">Store</span>
-              <span className="cursor-not-allowed">Support</span>
-              <span className="cursor-not-allowed">Orders</span>
-            </nav>
-
-            {/* 🔹 Аккаунт — показывает, что пользователь "зашёл под своим аккаунтом" */}
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] text-slate-900 shadow-sm">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
-                MB
-              </div>
-              <div className="flex flex-col leading-tight">
-                <span className="font-medium">{MOCK_USER.name}</span>
-                <span className="text-[10px] text-slate-500">
-                  Logged in · {MOCK_USER.type}
-                </span>
-              </div>
-            </div>
-          </div>
+          <nav className="hidden sm:flex items-center gap-4 text-xs text-slate-500">
+            <span className="cursor-not-allowed">Store</span>
+            <span className="cursor-not-allowed">Support</span>
+            <span className="cursor-not-allowed">Account</span>
+          </nav>
         </div>
       </header>
 
       {/* Main content */}
-      <div className="mx-auto max-w-6xl px-4 py-8 lg:py-10">
+      <div className="max-w-6xl mx-auto px-4 py-8 lg:py-10">
         {/* Page title */}
-        <section className="mb-6 flex flex-col gap-3 lg:mb-8 lg:flex-row lg:items-end lg:justify-between">
+        <section className="mb-6 lg:mb-8 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 lg:text-3xl">
+            <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight text-slate-900">
               Your shopping cart
             </h1>
-            <p className="mt-1 max-w-xl text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-500 max-w-xl">
               Choose a few products, see how the cart behaves and then pay with
               Crypto Pay — our crypto-friendly checkout powered by a Swiss
-              partner.
+              partner (demo only, no real funds are moved).
             </p>
           </div>
 
-          <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] text-white">
+          <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 text-white px-3 py-1.5 text-[11px]">
             <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
             <span>Crypto Pay demo integration</span>
           </div>
@@ -151,7 +137,7 @@ export default function DemoCartPage() {
         <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)] lg:gap-10">
           {/* Products section */}
           <section>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
               {PRODUCTS.map((product) => (
                 <ProductCard
                   key={product.id}

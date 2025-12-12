@@ -13,13 +13,14 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
       <div>
         <h3 className="text-sm font-semibold text-slate-900">
           Payment methods
         </h3>
         <p className="mt-1 text-xs text-slate-500">
-          Only Crypto Pay is active in this prototype.
+          In this demo only Crypto Pay is active. Other methods are
+          placeholders.
         </p>
       </div>
 
@@ -28,10 +29,10 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
         <button
           type="button"
           disabled
-          className="flex w-full cursor-not-allowed items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 shadow-sm"
+          className="w-full flex items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 cursor-not-allowed shadow-sm"
         >
           <span className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gray-200 text-[13px]">
+            <span className="h-6 w-6 rounded-md bg-gray-200 flex items-center justify-center text-[13px]">
               💳
             </span>
             <span className="font-medium">Pay by card (coming soon)</span>
@@ -43,10 +44,10 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
         <button
           type="button"
           disabled
-          className="flex w-full cursor-not-allowed items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 shadow-sm"
+          className="w-full flex items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 cursor-not-allowed shadow-sm"
         >
           <span className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gray-200 text-[13px]">
+            <span className="h-6 w-6 rounded-md bg-gray-200 flex items-center justify-center text-[13px]">
               🏦
             </span>
             <span className="font-medium">Bank transfer (coming soon)</span>
@@ -58,21 +59,20 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
         <button
           type="button"
           onClick={handleCryptoClick}
-          disabled={!hasItems}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition ${
+          className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition ${
             hasItems
               ? "bg-black text-white hover:bg-gray-900"
-              : "cursor-not-allowed bg-gray-900/10 text-gray-400"
+              : "bg-gray-900/10 text-gray-400 cursor-not-allowed"
           }`}
         >
           <span className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-white/10 text-[10px] font-bold">
+            <span className="h-6 w-6 rounded-full border border-white/20 bg-white/10 flex items-center justify-center text-[10px] font-bold">
               ₿
             </span>
             <span className="flex flex-col text-left">
-              <span>Pay with Crypto (CryptoPay)</span>
-              <span className="text-[10px] font-normal text-slate-300">
-                Official crypto-friendly method for this store
+              <span>Pay with Crypto</span>
+              <span className="text-[10px] font-normal opacity-75">
+                Crypto Pay · Crypto-friendly checkout
               </span>
             </span>
           </span>
@@ -80,10 +80,9 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
         </button>
       </div>
 
-      <p className="text-[10px] leading-relaxed text-slate-400">
-        By choosing Crypto Pay you still pay the online store. Crypto payment is
-        processed by a Swiss crypto-friendly payment partner and settled to the
-        merchant in fiat (demo).
+      <p className="text-[10px] text-slate-400 leading-relaxed">
+        This store uses Crypto Pay as a crypto-friendly checkout powered by a
+        Swiss PSP (demo only, no real funds are moved).
       </p>
     </div>
   );

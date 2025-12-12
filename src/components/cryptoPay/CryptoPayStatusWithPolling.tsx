@@ -1,97 +1,120 @@
+// src/components/cryptoPay/CryptoPayStatusWithPolling.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CryptoPayStatusBadge } from "./CryptoPayStatusBadge";
 
-type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
+export type InvoiceStatus =
+  | "waiting"
+  | "pending"
+  | "confirmed"
+  | "expired"
+  | "rejected";
 
 type Props = {
   invoiceId: string;
   initialStatus: InvoiceStatus;
-  expiresAt: string;
+  expiresAt: string; // пока не используем, оставляем
 };
 
-type StatusResponse =
-  | {
-      ok: true;
-      invoiceId: string;
-      status: InvoiceStatus;
-      expiresAt?: string;
-    }
-  | {
-      ok: false;
-      error: string;
-    };
+type PspInvoice = {
+  id: string;
+  status: InvoiceStatus;
+  expiresAt?: string;
+};
 
-/**
- * Обёртка над CryptoPayStatusBadge,
- * которая периодически опрашивает API /api/payments/status
- * и обновляет статус оплаты.
- */
-export function CryptoPayStatusWithPolling({
-  invoiceId,
-  initialStatus,
-  expiresAt,
-}: Props) {
+const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+function isFinalStatus(s: InvoiceStatus) {
+  return s === "confirmed" || s === "expired" || s === "rejected";
+}
+
+export function CryptoPayStatusWithPolling(props: Props) {
+  const { invoiceId, initialStatus } = props;
+
   const [status, setStatus] = useState<InvoiceStatus>(initialStatus);
-  const [currentExpiresAt, setCurrentExpiresAt] = useState<string>(expiresAt);
+  const statusRef = useRef<InvoiceStatus>(initialStatus);
 
+  const router = useRouter();
+
+  // держим ref синхронным, чтобы interval не ловил "устаревший" status
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  // 🛰 Polling статуса раз в 5 сек (напрямую из PSP-core)
   useEffect(() => {
     let isMounted = true;
 
-    // Если статус уже не "waiting", нет смысла опрашивать
-    if (initialStatus !== "waiting") {
-      return;
+    // Если уже финальный — ничего не опрашиваем
+    if (isFinalStatus(initialStatus)) {
+      return () => {
+        isMounted = false;
+      };
     }
 
-    const interval = setInterval(async () => {
-      // Если уже не "waiting" (например, мы руками обновили), выходим
-      if (!isMounted || status !== "waiting") return;
+    // Если нет API URL — тихо выходим (будет работать demo-режим без бекенда)
+    if (!PSP_API_URL) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const base = PSP_API_URL.replace(/\/+$/, "");
+
+    const tick = async () => {
+      if (!isMounted) return;
 
       try {
         const res = await fetch(
-          `/api/payments/status?invoiceId=${encodeURIComponent(invoiceId)}`,
-          { cache: "no-store" }
+          `${base}/invoices/${encodeURIComponent(invoiceId)}`,
+          {
+            cache: "no-store",
+          }
         );
 
         if (!res.ok) return;
 
-        const data = (await res.json()) as StatusResponse;
+        const data = (await res.json()) as PspInvoice;
 
-        if (!data.ok) return;
+        if (!data?.status || !isMounted) return;
 
-        if (!isMounted) return;
+        const nextStatus = data.status;
 
-        // Обновляем статус, если он поменялся
-        if (data.status && data.status !== status) {
-          setStatus(data.status);
+        // обновляем только если реально изменился
+        if (nextStatus !== statusRef.current) {
+          setStatus(nextStatus);
+        }
 
-          // Если бэк прислал актуальный expiresAt — обновим и его
-          if ("expiresAt" in data && data.expiresAt) {
-            setCurrentExpiresAt(data.expiresAt);
-          }
-
-          // Если статус стал финальным — можно остановить опрос
-          if (
-            data.status === "confirmed" ||
-            data.status === "expired" ||
-            data.status === "rejected"
-          ) {
-            clearInterval(interval);
-          }
+        // если финальный — дальше можно не опрашивать
+        if (isFinalStatus(nextStatus)) {
+          clearInterval(interval);
         }
       } catch {
-        // Ошибки сети тихо игнорируем — в следующем тике попробуем ещё раз
+        // игнорируем сетевые ошибки, попробуем снова
       }
-    }, 5000); // опрос каждые 5 секунд
+    };
+
+    // первый запрос сразу, чтобы не ждать 5 секунд
+    void tick();
+
+    const interval = setInterval(tick, 5000);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [invoiceId, initialStatus, status]);
+  }, [invoiceId, initialStatus]);
 
-  return (
-    <CryptoPayStatusBadge expiresAt={currentExpiresAt} initialStatus={status} />
-  );
+  // 🔁 Авто-редирект на success при confirmed
+  useEffect(() => {
+    if (status === "confirmed") {
+      router.push(
+        `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
+      );
+    }
+  }, [status, invoiceId, router]);
+
+  return <CryptoPayStatusBadge status={status} />;
 }
