@@ -9,7 +9,7 @@ import { CryptoPayAmountCard } from "@/components/cryptoPay/CryptoPayAmountCard"
 import { CryptoPayTimer } from "@/components/cryptoPay/CryptoPayTimer";
 import { CryptoPayStatusWithPolling } from "@/components/cryptoPay/CryptoPayStatusWithPolling";
 
-const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
 
 type PspInvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
@@ -41,8 +41,7 @@ function normalizeParam(value?: string | string[]): string | undefined {
 
 // helper для demo-режима: срок жизни инвойса 25 минут
 function getDemoExpiresAt(): string {
-  const now = Date.now();
-  return new Date(now + 25 * 60 * 1000).toISOString();
+  return new Date(Date.now() + 25 * 60 * 1000).toISOString();
 }
 
 // Загружаем инвойс из backend PSP-core
@@ -52,9 +51,12 @@ async function fetchInvoiceFromPsp(
   if (!PSP_API_URL) return null;
 
   try {
-    const res = await fetch(`${PSP_API_URL}/invoices/${invoiceId}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(
+      `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
+      {
+        cache: "no-store",
+      }
+    );
 
     if (!res.ok) return null;
 
@@ -94,8 +96,8 @@ export default async function PaymentPage(props: PageProps) {
         invoiceId,
         fiatAmount: parsedAmount,
         fiatCurrency: rawFiat,
-        cryptoCurrency: (rawCrypto as string) || "USDT",
-        cryptoAmount: parsedAmount,
+        cryptoCurrency: rawCrypto || "USDT",
+        cryptoAmount: parsedAmount, // demo fallback
         status: "waiting",
         expiresAt: getDemoExpiresAt(),
         paymentUrl: `/open/pay/${invoiceId}`,
@@ -193,7 +195,7 @@ export default async function PaymentPage(props: PageProps) {
             cryptoCurrency={cryptoCurrency}
           />
 
-          {/* Таймер, кошелёк и demo-кнопка показываем только пока ожидаем оплату */}
+          {/* Таймер, кошелёк показываем только пока ожидаем оплату */}
           {isWaiting && (
             <>
               <CryptoPayTimer expiresAt={expiresAt} />

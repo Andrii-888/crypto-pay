@@ -25,6 +25,10 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
   const [amount] = useState(() =>
     !Number.isFinite(initialAmount) || initialAmount < 0 ? 0 : initialAmount
   );
+
+  // ✅ minimal add: token selector state (USDT/USDC)
+  const [token, setToken] = useState<"USDT" | "USDC">("USDT");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +48,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
         body: JSON.stringify({
           amount,
           fiatCurrency: "EUR",
+          cryptoCurrency: token, // ✅ FIX: send selected token
         }),
       });
 
@@ -152,6 +157,36 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
                 Swiss-licensed partner handles the crypto side securely in the
                 background.
               </p>
+            </div>
+
+            {/* ✅ minimal add: stablecoin selector */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500">Stablecoin</span>
+
+              <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setToken("USDT")}
+                  className={`px-3 py-1.5 rounded-full transition ${
+                    token === "USDT"
+                      ? "bg-white shadow-sm text-slate-900"
+                      : "text-slate-500"
+                  }`}
+                >
+                  USDT
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setToken("USDC")}
+                  className={`px-3 py-1.5 rounded-full transition ${
+                    token === "USDC"
+                      ? "bg-white shadow-sm text-slate-900"
+                      : "text-slate-500"
+                  }`}
+                >
+                  USDC
+                </button>
+              </div>
             </div>
 
             <ul className="list-disc list-inside text-xs text-slate-500 space-y-1">

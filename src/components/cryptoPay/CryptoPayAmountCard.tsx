@@ -16,16 +16,20 @@ export function CryptoPayAmountCard({
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-500">Order amount</span>
-        <span className="text-lg font-semibold text-slate-900">
-          {fiatCurrency} {fiatAmount.toFixed(2)}
+        <span className="text-sm text-black">Order amount</span>
+
+        <span className="flex items-baseline gap-2 text-base font-semibold text-slate-900 tabular-nums">
+          <span>{fiatAmount.toFixed(2)}</span>
+          <span className="text-slate-700">{fiatCurrency}</span>
         </span>
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-500">To pay in crypto</span>
-        <span className="text-base font-semibold text-slate-900">
-          {cryptoAmount.toFixed(2)} {cryptoCurrency}
+        <span className="text-sm text-black">To pay in crypto</span>
+
+        <span className="flex items-baseline gap-2 text-base font-semibold text-slate-900 tabular-nums">
+          <span>{cryptoAmount.toFixed(2)}</span>
+          <span className="text-slate-700">{cryptoCurrency}</span>
         </span>
       </div>
 

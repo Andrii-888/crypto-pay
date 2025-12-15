@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CryptoPayQrBox } from "./CryptoPayQrBox";
 
 type CryptoPayWalletSectionProps = {
@@ -10,8 +10,9 @@ type CryptoPayWalletSectionProps = {
 };
 
 type NetworkKey = "trc20" | "bep20";
+type TokenKey = "USDT" | "USDC";
 
-const NETWORKS: Record<
+type TokenNetworkConfig = Record<
   NetworkKey,
   {
     code: string;
@@ -19,61 +20,100 @@ const NETWORKS: Record<
     description: string;
     address: string;
   }
-> = {
-  trc20: {
-    code: "TRC20 · TRON",
-    label: "TRC20 · TRON",
-    description: "Tether USDT TRC-20 · TRON network",
-    address: "TAEtcMJZ4YchkL3JtmcsR9JK2KzUbaMrh3",
+>;
+
+const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
+  USDT: {
+    trc20: {
+      code: "TRC20 · TRON",
+      label: "TRC20 · TRON",
+      description: "Tether USDT TRC-20 · TRON network",
+      address: "TAEtcMJZ4YchkL3JtmcsR9JK2KzUbaMrh3",
+    },
+    bep20: {
+      code: "BEP20 · BNB",
+      label: "BEP20 · BNB",
+      description: "Tether USDT BEP-20 · BNB Smart Chain",
+      address: "0x3de11960168e06871057ec26B9393ceA7858D0fE",
+    },
   },
-  bep20: {
-    code: "BEP20 · BNB",
-    label: "BEP20 · BNB",
-    description: "Tether USDT BEP-20 · BNB Smart Chain",
-    address: "0x3de11960168e06871057ec26B9393ceA7858D0fE",
+
+  USDC: {
+    trc20: {
+      code: "TRC20 · TRON",
+      label: "TRC20 · TRON",
+      description: "USD Coin USDC TRC-20 · TRON network",
+      address: "T_USDC_TRC20_ADDRESS_HERE",
+    },
+    bep20: {
+      code: "BEP20 · BNB",
+      label: "BEP20 · BNB",
+      description: "USD Coin USDC BEP-20 · BNB Smart Chain",
+      address: "0x3de11960168e06871057ec26B9393ceA7858D0fE",
+    },
   },
 };
 
-type SimulatePaidOk = {
-  ok: true;
-  invoiceId: string;
-  status: string;
-};
-
-type SimulatePaidError = {
-  ok: false;
-  error: string;
-  details?: string;
-};
-
+type SimulatePaidOk = { ok: true; invoiceId: string; status: string };
+type SimulatePaidError = { ok: false; error: string; details?: string };
 type SimulatePaidResponse = SimulatePaidOk | SimulatePaidError;
+
+type CopyKind = "address" | "amount" | null;
+
+function normalizeToken(v: string): TokenKey {
+  const t = String(v || "")
+    .trim()
+    .toUpperCase();
+  return t === "USDC" ? "USDC" : "USDT";
+}
 
 export function CryptoPayWalletSection({
   cryptoCurrency,
   cryptoAmount,
   invoiceId,
 }: CryptoPayWalletSectionProps) {
-  const [activeNet, setActiveNet] = useState<NetworkKey>("trc20");
-  const [copied, setCopied] = useState(false);
+  const token = normalizeToken(cryptoCurrency);
 
+  // ✅ для USDC сразу BEP20, для USDT — TRC20
+  const defaultNet: NetworkKey = token === "USDC" ? "bep20" : "trc20";
+  const [activeNet, setActiveNet] = useState<NetworkKey>(defaultNet);
+
+  // ✅ если токен меняется (USDT <-> USDC), тоже меняем сеть автоматически
+  useEffect(() => {
+    setActiveNet(token === "USDC" ? "bep20" : "trc20");
+  }, [token]);
+
+  const [copiedKind, setCopiedKind] = useState<CopyKind>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  const network = NETWORKS[activeNet];
-  const formattedAmount = `${cryptoAmount.toFixed(2)} ${cryptoCurrency}`;
-  const qrValue = network.address;
+  const network = TOKEN_CONFIG[token][activeNet];
 
-  async function handleCopy() {
+  const amountNumber = useMemo(() => cryptoAmount.toFixed(2), [cryptoAmount]);
+  const amountText = useMemo(
+    () => `${amountNumber} ${token}`,
+    [amountNumber, token]
+  );
+
+  const qrValue = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("amount", amountNumber);
+    p.set("currency", token);
+    p.set("invoice", invoiceId);
+    p.set("network", activeNet);
+    return `${network.address}?${p.toString()}`;
+  }, [network.address, amountNumber, token, invoiceId, activeNet]);
+
+  async function copy(text: string, kind: CopyKind) {
     try {
-      await navigator.clipboard.writeText(network.address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(text);
+      setCopiedKind(kind);
+      setTimeout(() => setCopiedKind(null), 1400);
     } catch {
       // ignore
     }
   }
 
-  // ✅ Демо: подтвердить оплату (имитация вебхука)
   async function handleConfirmDemoPayment() {
     if (!invoiceId || isConfirming) return;
 
@@ -111,9 +151,6 @@ export function CryptoPayWalletSection({
           "Simulate paid failed";
         throw new Error(msg);
       }
-
-      // ✅ Ничего не редиректим вручную.
-      // Статус поймается поллингом и он сам уведёт на /open/pay/success?invoiceId=...
     } catch (e) {
       setConfirmError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -124,45 +161,62 @@ export function CryptoPayWalletSection({
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-4">
       <div>
-        <h2 className="text-sm font-semibold text-slate-900">Receive USDT</h2>
+        <h2 className="text-sm font-semibold text-slate-900">
+          Receive {token}
+        </h2>
+
         <p className="mt-1 text-xs text-slate-500">
           Choose the network you want to use and send exactly{" "}
-          <span className="font-medium text-slate-900">{formattedAmount}</span>{" "}
+          <span className="inline-flex items-baseline gap-1 font-semibold text-slate-900 tabular-nums">
+            <span>{amountNumber}</span>
+            <span className="font-medium text-slate-700">{token}</span>
+          </span>{" "}
           from your own wallet. In production this address is generated by the
           Swiss payment provider.
         </p>
 
-        {/* ✅ ВАЖНО ДЛЯ ПОНИМАНИЯ: к какому инвойсу относится платеж */}
         <p className="mt-2 text-[11px] text-slate-500">
           Invoice: <span className="font-mono text-slate-900">{invoiceId}</span>
         </p>
       </div>
 
-      {/* Network selector */}
-      <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px]">
-        <button
-          type="button"
-          onClick={() => setActiveNet("trc20")}
-          className={`px-3 py-1.5 rounded-full transition ${
-            activeNet === "trc20"
-              ? "bg-white shadow-sm text-slate-900"
-              : "text-slate-500"
-          }`}
-        >
-          TRC20 · TRON
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveNet("bep20")}
-          className={`px-3 py-1.5 rounded-full transition ${
-            activeNet === "bep20"
-              ? "bg-white shadow-sm text-slate-900"
-              : "text-slate-500"
-          }`}
-        >
-          BEP20 · BNB
-        </button>
-      </div>
+      {/* ✅ Network UI:
+          - USDC: фиксируем BEP20 и не показываем переключатель
+          - USDT: показываем переключатель как раньше
+      */}
+      {token === "USDC" ? (
+        <div className="inline-flex items-center gap-2">
+          <span className="text-[11px] text-slate-500">Network</span>
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-900">
+            BEP20 · BNB
+          </span>
+        </div>
+      ) : (
+        <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px]">
+          <button
+            type="button"
+            onClick={() => setActiveNet("trc20")}
+            className={`px-3 py-1.5 rounded-full transition ${
+              activeNet === "trc20"
+                ? "bg-white shadow-sm text-slate-900"
+                : "text-slate-500"
+            }`}
+          >
+            TRC20 · TRON
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveNet("bep20")}
+            className={`px-3 py-1.5 rounded-full transition ${
+              activeNet === "bep20"
+                ? "bg-white shadow-sm text-slate-900"
+                : "text-slate-500"
+            }`}
+          >
+            BEP20 · BNB
+          </button>
+        </div>
+      )}
 
       {/* Description */}
       <div className="text-xs text-slate-600">
@@ -171,32 +225,50 @@ export function CryptoPayWalletSection({
 
       {/* Address + Copy */}
       <div className="space-y-1 text-xs">
-        <p className="text-[11px] text-slate-500">Payment address</p>
+        <p className="text-[11px] text-slate-500">Payment details</p>
 
-        <div className="flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-slate-50">
-          <span className="font-mono text-[11px] truncate">
-            {network.address}
-          </span>
+        <div className="rounded-xl bg-slate-900 px-3 py-2.5 text-slate-50 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] truncate flex-1">
+              {network.address}
+            </span>
 
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="inline-flex items-center rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 transition"
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
+            <button
+              type="button"
+              onClick={() => copy(network.address, "address")}
+              className="inline-flex items-center rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 transition"
+            >
+              {copiedKind === "address" ? "Copied" : "Copy address"}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-200 tabular-nums flex-1">
+              Amount:{" "}
+              <span className="font-semibold text-white">
+                {amountNumber}{" "}
+                <span className="font-medium text-slate-200">{token}</span>
+              </span>
+            </span>
+
+            <button
+              type="button"
+              onClick={() => copy(amountText, "amount")}
+              className="inline-flex items-center rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 transition"
+            >
+              {copiedKind === "amount" ? "Copied" : "Copy amount"}
+            </button>
+          </div>
         </div>
 
         <p className="text-[11px] text-slate-400">
-          Send only USDT on <span className="font-medium">{network.code}</span>{" "}
-          to this address.
+          Send only <span className="font-medium">{token}</span> on{" "}
+          <span className="font-medium">{network.code}</span> to this address.
         </p>
       </div>
 
-      {/* QR */}
       <CryptoPayQrBox value={qrValue} />
 
-      {/* Notices */}
       <ul className="list-disc list-inside text-[11px] text-slate-500 space-y-1 pt-1">
         <li>Always double-check the address and selected network.</li>
         <li>For larger payments, send a small test transaction first.</li>
@@ -206,25 +278,40 @@ export function CryptoPayWalletSection({
         </li>
       </ul>
 
-      {/* ✅ CTA: подтверждаем оплату через simulate-paid */}
       <button
         type="button"
         onClick={handleConfirmDemoPayment}
         disabled={isConfirming || !invoiceId}
         className="
-          w-full flex items-center justify-center gap-1
+          w-full h-11 rounded-xl
           bg-black text-white
-          font-medium text-sm
-          py-2.5 rounded-xl
-          hover:bg-slate-900 active:scale-[0.98]
-          transition shadow-sm mt-2
-          disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100
+          shadow-sm mt-2
+          transition-colors duration-200
+          hover:bg-slate-900
+          disabled:opacity-60 disabled:cursor-not-allowed
         "
       >
-        {isConfirming
-          ? "Confirming payment (demo)..."
-          : "I have sent the payment (demo)"}
-        <span className="text-lg leading-none">→</span>
+        <span className="flex items-center justify-center gap-2">
+          <span className="inline-flex w-4 justify-center">
+            {isConfirming ? (
+              <span
+                className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <span className="h-4 w-4" aria-hidden="true" />
+            )}
+          </span>
+          <span className="text-sm font-medium">I have sent the payment</span>
+          <span
+            className={`text-lg leading-none transition-opacity duration-150 ${
+              isConfirming ? "opacity-40" : "opacity-100"
+            }`}
+            aria-hidden="true"
+          >
+            →
+          </span>
+        </span>
       </button>
 
       {confirmError && (

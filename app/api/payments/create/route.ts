@@ -1,22 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
-const FRONTEND_URL = (process.env.NEXT_PUBLIC_FRONTEND_URL ?? "").replace(
-  /\/+$/,
+const PSP_API_URL = (
+  process.env.PSP_API_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
   ""
-);
+).replace(/\/+$/, "");
 
-// Генерация invoiceId на фронте (fallback)
-function generateInvoiceId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
-}
-
+// ✅ безопасно читаем JSON
 type JsonObject = Record<string, unknown>;
 
-// Универсальный helper для вытаскивания поля из ответа бекенда
 function extractField<T = unknown>(
   source: unknown,
   keys: string[],
@@ -27,151 +19,177 @@ function extractField<T = unknown>(
 
   for (const key of keys) {
     const value = obj[key];
-    if (value != null) return value as T;
+    if (value !== undefined && value !== null) return value as T;
   }
-
   return fallback;
 }
 
+function toUpperSafe(v: unknown, fallback: string) {
+  return typeof v === "string" && v.trim() ? v.trim().toUpperCase() : fallback;
+}
+
+function getOrigin(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  if (origin) return origin.replace(/\/+$/, "");
+
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const proto = req.headers.get("x-forwarded-proto") ?? "http";
+  if (host) return `${proto}://${host}`.replace(/\/+$/, "");
+
+  return req.nextUrl.origin.replace(/\/+$/, "");
+}
+
 export async function POST(request: NextRequest) {
+  const baseUrl = getOrigin(request);
+
+  let amount = 0;
+  let fiatCurrency = "EUR";
+  let cryptoCurrency = "USDT";
+  let description: string | undefined;
+
   try {
-    let amount = 0;
-    let fiatCurrency = "EUR";
-    let cryptoCurrency = "USDT";
-    let description: string | undefined;
+    const body = (await request.json().catch(() => ({}))) as JsonObject;
 
-    // Аккуратно читаем тело (НЕ падаем, если пусто или битое)
-    try {
-      const body = (await request.json().catch(() => ({}))) as JsonObject;
+    amount =
+      Number(extractField(body, ["amount", "fiatAmount", "total"], 0)) || 0;
 
-      amount =
-        Number(extractField(body, ["amount", "fiatAmount", "total"], 0)) || 0;
+    fiatCurrency = toUpperSafe(
+      extractField(body, ["fiatCurrency", "currency"], "EUR"),
+      "EUR"
+    );
 
-      fiatCurrency = (extractField<string>(
-        body,
-        ["fiatCurrency", "currency"],
-        "EUR"
-      ) ?? "EUR") as string;
+    cryptoCurrency = toUpperSafe(
+      extractField(body, ["cryptoCurrency", "token"], "USDT"),
+      "USDT"
+    );
 
-      cryptoCurrency = (extractField<string>(
-        body,
-        ["cryptoCurrency", "token"],
-        "USDT"
-      ) ?? "USDT") as string;
+    description = extractField<string>(
+      body,
+      ["description", "orderId"],
+      undefined
+    );
+  } catch {
+    // ignore
+  }
 
-      description =
-        extractField<string>(body, ["description", "orderId"], undefined) ??
-        undefined;
-    } catch {
-      // оставляем дефолты
-    }
+  if (!amount || amount <= 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "VALIDATION_ERROR",
+        message: "amount must be greater than 0",
+      },
+      { status: 400 }
+    );
+  }
 
-    if (!amount || amount <= 0) {
+  if (!PSP_API_URL) {
+    return NextResponse.json(
+      { ok: false, error: "CONFIG_ERROR", message: "PSP_API_URL is empty" },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const pspRes = await fetch(`${PSP_API_URL}/invoices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fiatAmount: amount,
+        fiatCurrency,
+        cryptoCurrency, // ✅ отправляем выбранный токен (USDT/USDC)
+        description,
+      }),
+    });
+
+    const backendStatus = `HTTP ${pspRes.status}`;
+    const data = (await pspRes.json().catch(() => ({}))) as JsonObject;
+
+    if (!pspRes.ok) {
+      const msg =
+        extractField<string>(data, ["message", "error"], undefined) ??
+        `PSP responded with status ${pspRes.status}`;
       return NextResponse.json(
         {
           ok: false,
-          error: "VALIDATION_ERROR",
-          message: "amount must be greater than 0",
+          error: "PSP_ERROR",
+          message: msg,
+          backendStatus,
+          backendData: data,
         },
-        { status: 400 }
+        { status: 502 }
       );
     }
 
-    // БАЗА ДЛЯ ССЫЛКИ НА ОПЛАТУ:
-    // 1) если задан NEXT_PUBLIC_FRONTEND_URL — используем его (важно для прод/доменов)
-    // 2) иначе fallback на текущий origin
-    const baseUrl = FRONTEND_URL || request.nextUrl.origin;
+    const invoiceId =
+      extractField<string>(data, ["id", "invoiceId", "invoice_id"]) ??
+      undefined;
 
-    let invoiceIdFromBackend: string | null = null;
-    let backendStatus: string | null = null;
-    let backendError: string | null = null;
-    let backendData: JsonObject | null = null;
-
-    // Пытаемся создать инвойс на PSP-core
-    if (PSP_API_URL) {
-      try {
-        const pspRes = await fetch(`${PSP_API_URL}/invoices`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fiatAmount: amount,
-            fiatCurrency,
-            cryptoCurrency,
-            description,
-          }),
-        });
-
-        backendStatus = `HTTP ${pspRes.status}`;
-
-        const data = (await pspRes.json().catch(() => ({}))) as JsonObject;
-
-        backendData = data;
-
-        if (pspRes.ok) {
-          invoiceIdFromBackend =
-            extractField<string>(data, ["id", "invoiceId", "invoice_id"]) ??
-            null;
-        } else {
-          const msg = extractField<string>(data, ["message"], undefined);
-          backendError = msg
-            ? msg
-            : `PSP responded with status ${pspRes.status}`;
-        }
-      } catch (err) {
-        backendError =
-          err instanceof Error ? err.message : "Unknown fetch error";
-      }
-    } else {
-      backendError = "PSP_API_URL is empty";
+    if (!invoiceId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "PSP_ERROR",
+          message: "PSP did not return invoice id",
+          backendStatus,
+          backendData: data,
+        },
+        { status: 502 }
+      );
     }
 
-    // Если PSP отдал id — используем его, если нет — генерируем локальный
-    const invoiceId = invoiceIdFromBackend ?? generateInvoiceId();
-
-    // Нормализуем дополнительные поля из ответа PSP (если были)
     const normalizedAmount =
       extractField<number>(
-        backendData,
+        data,
         ["amount", "fiatAmount", "fiat_amount"],
         amount
       ) ?? amount;
 
-    const normalizedFiatCurrency =
-      extractField<string>(
-        backendData,
+    const normalizedFiatCurrency = toUpperSafe(
+      extractField(
+        data,
         ["fiatCurrency", "fiat_currency", "currency"],
         fiatCurrency
-      ) ?? fiatCurrency;
+      ),
+      fiatCurrency
+    );
 
-    const normalizedCryptoCurrency =
-      extractField<string>(
-        backendData,
+    // ✅ ВАЖНО: если PSP не вернул cryptoCurrency — используем то, что выбрал клиент
+    const normalizedCryptoCurrency = toUpperSafe(
+      extractField(
+        data,
         ["cryptoCurrency", "crypto_currency", "token"],
         cryptoCurrency
-      ) ?? cryptoCurrency;
+      ),
+      cryptoCurrency
+    );
 
     const cryptoAmount =
-      extractField<number>(
-        backendData,
-        ["cryptoAmount", "amountCrypto", "crypto_amount"],
-        undefined
-      ) ?? undefined;
+      extractField<number>(data, [
+        "cryptoAmount",
+        "amountCrypto",
+        "crypto_amount",
+      ]) ?? undefined;
 
     const expiresAt =
-      extractField<string>(
-        backendData,
-        ["expiresAt", "expires_at", "expiration"],
-        undefined
-      ) ?? undefined;
+      extractField<string>(data, ["expiresAt", "expires_at", "expiration"]) ??
+      undefined;
 
-    // ВАЖНО:
-    // не берем paymentUrl от бекенда, потому что он может быть с несуществующим доменом
-    // (типа demo.your-cryptopay.com -> NXDOMAIN)
-    const paymentUrl = `${baseUrl}/open/pay/${invoiceId}?amount=${encodeURIComponent(
-      normalizedAmount
-    )}&fiat=${encodeURIComponent(
-      normalizedFiatCurrency
-    )}&crypto=${encodeURIComponent(normalizedCryptoCurrency)}`;
+    // ✅ FIX: сначала берём paymentUrl, который вернул PSP (psp-core),
+    // иначе fallback на текущий фронт
+    const backendPaymentUrl =
+      extractField<string>(data, ["paymentUrl", "payment_url"], undefined) ??
+      undefined;
+
+    const paymentUrl =
+      backendPaymentUrl ??
+      `${baseUrl}/open/pay/${encodeURIComponent(
+        invoiceId
+      )}?amount=${encodeURIComponent(
+        normalizedAmount
+      )}&fiat=${encodeURIComponent(
+        normalizedFiatCurrency
+      )}&crypto=${encodeURIComponent(normalizedCryptoCurrency)}`;
 
     return NextResponse.json(
       {
@@ -184,28 +202,17 @@ export async function POST(request: NextRequest) {
         cryptoAmount,
         expiresAt,
         backendStatus,
-        backendError,
       },
       { status: 200 }
     );
   } catch (err) {
-    const fallbackId = generateInvoiceId();
-
     return NextResponse.json(
       {
-        ok: true,
-        invoiceId: fallbackId,
-        paymentUrl: `/open/pay/${fallbackId}`,
-        amount: null,
-        fiatCurrency: null,
-        cryptoCurrency: null,
-        cryptoAmount: null,
-        expiresAt: null,
-        backendStatus: null,
-        backendError:
-          err instanceof Error ? err.message : "Unknown top-level error",
+        ok: false,
+        error: "NETWORK_ERROR",
+        message: err instanceof Error ? err.message : "Unknown fetch error",
       },
-      { status: 200 }
+      { status: 502 }
     );
   }
 }

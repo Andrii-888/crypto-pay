@@ -2,7 +2,7 @@
 import Link from "next/link";
 import type { InvoiceData } from "@/lib/invoiceStore";
 
-const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
 
 type PspInvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
@@ -40,7 +40,7 @@ async function fetchInvoiceFromPsp(
 
   try {
     const res = await fetch(
-      `${PSP_API_URL.replace(/\/+$/, "")}/invoices/${invoiceId}`,
+      `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
       {
         cache: "no-store",
       }
@@ -58,13 +58,56 @@ function formatMoney(amount: number, currency: string) {
   return `${n.toFixed(2)} ${currency}`;
 }
 
+function statusUi(status?: PspInvoiceStatus) {
+  switch (status) {
+    case "confirmed":
+      return {
+        title: "Payment confirmed",
+        subtitle: "Your crypto payment was received and confirmed.",
+        badge: "Confirmed",
+        badgeCls: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+    case "waiting":
+      return {
+        title: "Payment processing",
+        subtitle:
+          "We’re still waiting for on-chain confirmation. This page will update automatically.",
+        badge: "Waiting",
+        badgeCls: "bg-amber-50 text-amber-800 border-amber-200",
+      };
+    case "expired":
+      return {
+        title: "Payment expired",
+        subtitle:
+          "This payment link has expired. Please return to the store and create a new payment.",
+        badge: "Expired",
+        badgeCls: "bg-slate-100 text-slate-700 border-slate-200",
+      };
+    case "rejected":
+      return {
+        title: "Payment rejected",
+        subtitle:
+          "The payment was rejected by the provider. Please return to the store and try again.",
+        badge: "Rejected",
+        badgeCls: "bg-rose-50 text-rose-800 border-rose-200",
+      };
+    default:
+      return {
+        title: "Payment status",
+        subtitle:
+          "This page shows the final invoice state once it is available from the payment provider.",
+        badge: "Unknown",
+        badgeCls: "bg-slate-100 text-slate-700 border-slate-200",
+      };
+  }
+}
+
 export default async function CryptoPaySuccessPage(props: PageProps) {
   const sp = (await props.searchParams) ?? {};
   const invoiceId = normalizeParam(sp.invoiceId);
 
   const pspInvoice = invoiceId ? await fetchInvoiceFromPsp(invoiceId) : null;
 
-  // Нормализуем в общую структуру (если надо будет использовать дальше)
   const invoice: InvoiceData | null = pspInvoice
     ? {
         invoiceId: pspInvoice.id,
@@ -78,16 +121,7 @@ export default async function CryptoPaySuccessPage(props: PageProps) {
       }
     : null;
 
-  const statusLabel =
-    invoice?.status === "confirmed"
-      ? "Completed"
-      : invoice?.status === "waiting"
-      ? "Waiting confirmation"
-      : invoice?.status === "expired"
-      ? "Expired"
-      : invoice?.status === "rejected"
-      ? "Rejected"
-      : "Unknown";
+  const ui = statusUi(pspInvoice?.status);
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -99,13 +133,11 @@ export default async function CryptoPaySuccessPage(props: PageProps) {
           </div>
 
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Payment received (demo)
+            {ui.title}
           </h1>
 
           <p className="mt-2 max-w-sm mx-auto text-xs text-slate-500">
-            This screen shows the final invoice state. In production, customers
-            are redirected here only after the Swiss partner confirms the
-            on-chain payment.
+            {ui.subtitle}
           </p>
         </header>
 
@@ -120,15 +152,17 @@ export default async function CryptoPaySuccessPage(props: PageProps) {
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Payment status</span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              {statusLabel}
+            <span
+              className={`inline-flex items-center gap-2 h-7 px-3 rounded-full border text-xs font-medium ${ui.badgeCls}`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              <span className="whitespace-nowrap leading-none">{ui.badge}</span>
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Fiat amount</span>
-            <span className="text-slate-900">
+            <span className="text-slate-900 tabular-nums">
               {invoice
                 ? formatMoney(invoice.fiatAmount, invoice.fiatCurrency)
                 : "—"}
@@ -137,7 +171,7 @@ export default async function CryptoPaySuccessPage(props: PageProps) {
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Crypto amount</span>
-            <span className="text-slate-900">
+            <span className="text-slate-900 tabular-nums">
               {invoice
                 ? formatMoney(invoice.cryptoAmount, invoice.cryptoCurrency)
                 : "—"}
@@ -163,21 +197,19 @@ export default async function CryptoPaySuccessPage(props: PageProps) {
             </span>
           </div>
 
+          {/* мягкие подсказки, без красных ошибок */}
           {!invoiceId && (
-            <p className="pt-1 text-[11px] text-rose-500">
-              Missing <span className="font-mono">invoiceId</span> in URL. This
-              page should be opened as:
-              <span className="font-mono">
-                {" "}
-                /open/pay/success?invoiceId=...
-              </span>
+            <p className="pt-1 text-[11px] text-slate-400">
+              Tip: open this page as{" "}
+              <span className="font-mono">/open/pay/success?invoiceId=...</span>
             </p>
           )}
 
           {invoiceId && !invoice && (
-            <p className="pt-1 text-[11px] text-rose-500">
-              Invoice not found in PSP-core (check that PSP-core is running and
-              NEXT_PUBLIC_API_URL is correct).
+            <p className="pt-1 text-[11px] text-slate-400">
+              Provider data is not available yet. If you are running locally,
+              make sure <span className="font-mono">NEXT_PUBLIC_API_URL</span>{" "}
+              points to PSP-core.
             </p>
           )}
         </section>

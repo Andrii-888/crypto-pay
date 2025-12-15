@@ -15,7 +15,7 @@ export type InvoiceStatus =
 type Props = {
   invoiceId: string;
   initialStatus: InvoiceStatus;
-  expiresAt: string; // пока не используем, оставляем
+  expiresAt: string;
 };
 
 type PspInvoice = {
@@ -24,92 +24,126 @@ type PspInvoice = {
   expiresAt?: string;
 };
 
-const PSP_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
 
 function isFinalStatus(s: InvoiceStatus) {
   return s === "confirmed" || s === "expired" || s === "rejected";
 }
 
-export function CryptoPayStatusWithPolling(props: Props) {
-  const { invoiceId, initialStatus } = props;
+function isExpiredByTime(expiresAt?: string) {
+  if (!expiresAt) return false;
+  const t = Date.parse(expiresAt);
+  if (Number.isNaN(t)) return false;
+  return Date.now() >= t;
+}
+
+export function CryptoPayStatusWithPolling({
+  invoiceId,
+  initialStatus,
+  expiresAt,
+}: Props) {
+  const router = useRouter();
 
   const [status, setStatus] = useState<InvoiceStatus>(initialStatus);
   const statusRef = useRef<InvoiceStatus>(initialStatus);
+  const redirectedRef = useRef(false);
 
-  const router = useRouter();
-
-  // держим ref синхронным, чтобы interval не ловил "устаревший" status
+  // ✅ держим state в синхроне, если initialStatus поменялся извне
   useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
+    setStatus(initialStatus);
+    statusRef.current = initialStatus;
+  }, [initialStatus]);
 
-  // 🛰 Polling статуса раз в 5 сек (напрямую из PSP-core)
+  // ✅ локальный тайм-аут на истечение (даже если PSP не отвечает)
   useEffect(() => {
-    let isMounted = true;
+    if (isFinalStatus(status)) return;
+    if (!expiresAt) return;
 
-    // Если уже финальный — ничего не опрашиваем
-    if (isFinalStatus(initialStatus)) {
-      return () => {
-        isMounted = false;
-      };
+    const t = Date.parse(expiresAt);
+    if (Number.isNaN(t)) return;
+
+    const ms = t - Date.now();
+    if (ms <= 0) {
+      setStatus("expired");
+      return;
     }
 
-    // Если нет API URL — тихо выходим (будет работать demo-режим без бекенда)
-    if (!PSP_API_URL) {
-      return () => {
-        isMounted = false;
-      };
-    }
+    const timer = setTimeout(() => {
+      // если к моменту истечения не финальный — ставим expired
+      if (!isFinalStatus(statusRef.current)) {
+        setStatus("expired");
+      }
+    }, ms);
 
-    const base = PSP_API_URL.replace(/\/+$/, "");
+    return () => clearTimeout(timer);
+  }, [expiresAt, status]);
+
+  // 🛰 Polling статуса раз в 5 сек (из PSP-core)
+  useEffect(() => {
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    // уже финальный — не поллим
+    if (isFinalStatus(statusRef.current)) return;
+
+    // нет API — поллинг выключен, живём на demo-логике + expiresAt
+    if (!PSP_API_URL) return;
 
     const tick = async () => {
-      if (!isMounted) return;
+      if (cancelled) return;
+
+      // если уже финальный — не делаем запросы
+      if (isFinalStatus(statusRef.current)) return;
+
+      // если уже истёк по времени — не дергаем PSP
+      if (isExpiredByTime(expiresAt)) {
+        setStatus("expired");
+        return;
+      }
 
       try {
         const res = await fetch(
-          `${base}/invoices/${encodeURIComponent(invoiceId)}`,
+          `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
           {
             cache: "no-store",
           }
         );
 
-        if (!res.ok) return;
+        if (res.ok) {
+          const data = (await res.json()) as PspInvoice;
 
-        const data = (await res.json()) as PspInvoice;
+          if (data?.status) {
+            const next = data.status;
 
-        if (!data?.status || !isMounted) return;
+            if (next !== statusRef.current) {
+              statusRef.current = next;
+              setStatus(next);
+            }
 
-        const nextStatus = data.status;
-
-        // обновляем только если реально изменился
-        if (nextStatus !== statusRef.current) {
-          setStatus(nextStatus);
-        }
-
-        // если финальный — дальше можно не опрашивать
-        if (isFinalStatus(nextStatus)) {
-          clearInterval(interval);
+            if (isFinalStatus(next)) return;
+          }
         }
       } catch {
-        // игнорируем сетевые ошибки, попробуем снова
+        // игнорируем, попробуем снова
       }
+
+      // планируем следующий тик
+      timeout = setTimeout(tick, 5000);
     };
 
-    // первый запрос сразу, чтобы не ждать 5 секунд
+    // первый тик сразу
     void tick();
 
-    const interval = setInterval(tick, 5000);
-
     return () => {
-      isMounted = false;
-      clearInterval(interval);
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
     };
-  }, [invoiceId, initialStatus]);
+  }, [invoiceId, expiresAt]);
 
-  // 🔁 Авто-редирект на success при confirmed
+  // 🔁 Авто-редирект на success при confirmed (один раз)
   useEffect(() => {
-    if (status === "confirmed") {
+    if (status === "confirmed" && !redirectedRef.current) {
+      redirectedRef.current = true;
       router.push(
         `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
       );
