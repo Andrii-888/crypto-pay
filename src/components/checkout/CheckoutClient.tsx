@@ -38,7 +38,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
     !Number.isFinite(initialAmount) || initialAmount < 0 ? 0 : initialAmount
   );
 
-  // ✅ minimal add: token selector state (USDT/USDC)
   const [token, setToken] = useState<"USDT" | "USDC">("USDT");
 
   const [loading, setLoading] = useState(false);
@@ -101,11 +100,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
 
   const displayAmount = amount > 0 ? amount.toFixed(2) : "0.00";
 
-  const infoHref =
-    amount > 0
-      ? `/crypto-payment-info?amount=${amount.toFixed(2)}`
-      : `/crypto-payment-info`;
-
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-xl mx-auto px-4 py-10 lg:py-12">
@@ -165,17 +159,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
                 background.
               </p>
             </div>
-
-            {/* 🔐 Always-visible info link (same styling as in the store) */}
-            <a href={infoHref} className="crypto-info-link">
-              <div className="crypto-info-link-inner">
-                <span className="crypto-info-link-left">
-                  <span className="crypto-info-link-icon">ⓘ</span>
-                  <span>How crypto payments are verified &amp; protected</span>
-                </span>
-                <span className="crypto-info-link-arrow">→</span>
-              </div>
-            </a>
 
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-500">Stablecoin</span>
