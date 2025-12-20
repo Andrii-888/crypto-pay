@@ -53,9 +53,7 @@ async function fetchInvoiceFromPsp(
   try {
     const res = await fetch(
       `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
-      {
-        cache: "no-store",
-      }
+      { cache: "no-store" }
     );
 
     if (!res.ok) return null;
@@ -79,12 +77,17 @@ async function fetchInvoiceFromPsp(
 
 export default async function PaymentPage(props: PageProps) {
   const { invoiceId } = await props.params;
-  const sp = (await props.searchParams) ?? {};
 
-  let invoice: InvoiceData | null = await fetchInvoiceFromPsp(invoiceId);
+  const invoice: InvoiceData | null = await fetchInvoiceFromPsp(invoiceId);
 
-  // Fallback — данные из query (демо-режим)
-  if (!invoice) {
+  // ✅ ВАЖНО: В ПРОДЕ никаких fallback-данных из query быть не должно.
+  // Оставляем demo fallback только в dev, чтобы можно было верстать UI без бэка.
+  const isDev = process.env.NODE_ENV !== "production";
+
+  let finalInvoice = invoice;
+
+  if (!finalInvoice && isDev) {
+    const sp = (await props.searchParams) ?? {};
     const rawAmount = normalizeParam(sp.amount);
     const rawFiat = normalizeParam(sp.fiat);
     const rawCrypto = normalizeParam(sp.crypto);
@@ -92,12 +95,13 @@ export default async function PaymentPage(props: PageProps) {
     const parsedAmount = rawAmount ? Number(rawAmount) : 0;
 
     if (parsedAmount > 0 && rawFiat) {
-      invoice = {
+      finalInvoice = {
         invoiceId,
         fiatAmount: parsedAmount,
         fiatCurrency: rawFiat,
-        cryptoCurrency: rawCrypto || "USDT",
-        cryptoAmount: parsedAmount, // demo fallback
+        cryptoCurrency: (rawCrypto || "USDT").toUpperCase(),
+        // demo fallback — НЕ финансовая логика, только для UI
+        cryptoAmount: parsedAmount,
         status: "waiting",
         expiresAt: getDemoExpiresAt(),
         paymentUrl: `/open/pay/${invoiceId}`,
@@ -105,7 +109,7 @@ export default async function PaymentPage(props: PageProps) {
     }
   }
 
-  if (!invoice) {
+  if (!finalInvoice) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
         <div className="max-w-md w-full text-center space-y-3">
@@ -128,7 +132,7 @@ export default async function PaymentPage(props: PageProps) {
     cryptoCurrency,
     expiresAt,
     status,
-  } = invoice;
+  } = finalInvoice;
 
   const checkoutHref = `/checkout?amount=${encodeURIComponent(
     fiatAmount.toFixed(2)
@@ -153,11 +157,11 @@ export default async function PaymentPage(props: PageProps) {
         </div>
 
         {/* Header */}
-        <CryptoPayHeader invoiceId={invoice.invoiceId} />
+        <CryptoPayHeader invoiceId={finalInvoice.invoiceId} />
 
         {/* Status with polling */}
         <CryptoPayStatusWithPolling
-          invoiceId={invoice.invoiceId}
+          invoiceId={finalInvoice.invoiceId}
           initialStatus={status as PspInvoiceStatus}
           expiresAt={expiresAt}
         />
@@ -201,7 +205,7 @@ export default async function PaymentPage(props: PageProps) {
               <CryptoPayTimer expiresAt={expiresAt} />
 
               <CryptoPayWalletSection
-                invoiceId={invoice.invoiceId}
+                invoiceId={finalInvoice.invoiceId}
                 cryptoCurrency={cryptoCurrency}
                 cryptoAmount={cryptoAmount}
               />

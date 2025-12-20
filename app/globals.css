@@ -24,3 +24,59 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* === Crypto payment info link (Apple-style, PSP safe) === */
+.crypto-info-link {
+  display: block;
+  width: 100%;
+  border-radius: 0.75rem; /* rounded-xl */
+  background-color: #0284c7; /* sky-600 */
+  border: 1px solid #0369a1; /* sky-700 */
+  padding: 0.75rem 1rem;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: background-color 0.15s ease-in-out;
+}
+
+.crypto-info-link:hover {
+  background-color: #0369a1; /* sky-700 */
+}
+
+.crypto-info-link:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.6); /* sky-400 */
+}
+
+.crypto-info-link-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.crypto-info-link-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.crypto-info-link-icon {
+  display: flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: #0ea5e9; /* sky-500 */
+  border: 1px solid #0369a1; /* sky-700 */
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.crypto-info-link-arrow {
+  font-size: 0.75rem;
+}

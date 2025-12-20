@@ -8,9 +8,13 @@ type PaymentMethodsProps = {
 export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
   function handleCryptoClick() {
     if (!hasItems) return;
-    // Переход на страницу /checkout с суммой в query
     window.location.href = `/checkout?amount=${cartTotal.toFixed(2)}`;
   }
+
+  const infoHref =
+    cartTotal > 0
+      ? `/crypto-payment-info?amount=${cartTotal.toFixed(2)}`
+      : `/crypto-payment-info`;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
@@ -24,22 +28,18 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
         </p>
       </div>
 
-      <div className="space-y-2">
-        {/* Card - disabled */}
-        <button
-          type="button"
-          disabled
-          className="w-full flex items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 cursor-not-allowed shadow-sm"
-        >
-          <span className="flex items-center gap-2">
-            <span className="h-6 w-6 rounded-md bg-gray-200 flex items-center justify-center text-[13px]">
-              💳
-            </span>
-            <span className="font-medium">Pay by card (coming soon)</span>
+      {/* 🔐 Info link (always visible, before any payment actions) */}
+      <a href={infoHref} className="crypto-info-link">
+        <div className="crypto-info-link-inner">
+          <span className="crypto-info-link-left">
+            <span className="crypto-info-link-icon">ⓘ</span>
+            <span>How crypto payments are verified &amp; protected</span>
           </span>
-          <span className="text-[10px]">••••</span>
-        </button>
+          <span className="crypto-info-link-arrow">→</span>
+        </div>
+      </a>
 
+      <div className="space-y-2">
         {/* Bank transfer - disabled */}
         <button
           type="button"
@@ -77,6 +77,20 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
             </span>
           </span>
           <span className="text-[10px]">{hasItems ? "→" : ""}</span>
+        </button>
+        {/* Card - disabled */}
+        <button
+          type="button"
+          disabled
+          className="w-full flex items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 cursor-not-allowed shadow-sm"
+        >
+          <span className="flex items-center gap-2">
+            <span className="h-6 w-6 rounded-md bg-gray-200 flex items-center justify-center text-[13px]">
+              💳
+            </span>
+            <span className="font-medium">Pay by card (coming soon)</span>
+          </span>
+          <span className="text-[10px]">••••</span>
         </button>
       </div>
 

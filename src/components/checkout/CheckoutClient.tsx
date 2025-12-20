@@ -9,15 +9,27 @@ type CheckoutClientProps = {
 };
 
 type InvoiceResponse = {
-  invoiceId: string;
-  fiatAmount: number;
-  fiatCurrency: string;
-  cryptoCurrency: string;
-  cryptoAmount: number;
-  status: string;
-  expiresAt: string;
-  paymentUrl: string;
+  ok?: boolean;
+  invoiceId?: string;
+  fiatAmount?: number;
+  fiatCurrency?: string;
+  cryptoCurrency?: string;
+  cryptoAmount?: number;
+  status?: string;
+  expiresAt?: string;
+  paymentUrl?: string;
+
+  // error shape from /api/payments/create on failure
+  error?: string;
+  message?: string;
+  backendStatus?: string;
 };
+
+function extractString(obj: unknown, key: string): string | null {
+  if (!obj || typeof obj !== "object") return null;
+  const v = (obj as Record<string, unknown>)[key];
+  return typeof v === "string" && v.trim() ? v : null;
+}
 
 export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
   const router = useRouter();
@@ -38,52 +50,45 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
       return;
     }
 
-    try {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
+    try {
       const res = await fetch("/api/payments/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount,
           fiatCurrency: "EUR",
-          cryptoCurrency: token, // ✅ FIX: send selected token
+          cryptoCurrency: token,
         }),
       });
 
+      let data: InvoiceResponse | null = null;
+      try {
+        data = (await res.json()) as InvoiceResponse;
+      } catch {
+        data = null;
+      }
+
       if (!res.ok) {
-        let data: unknown;
+        const msg =
+          extractString(data, "message") ??
+          extractString(data, "error") ??
+          `Failed to create invoice (HTTP ${res.status})`;
 
-        try {
-          data = await res.json();
-        } catch {
-          data = null;
-        }
-
-        let message = "Failed to create invoice";
-
-        if (
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-        ) {
-          message = (data as { error: string }).error;
-        }
-
-        throw new Error(message);
+        setError(msg);
+        return; // ✅ ВАЖНО: не throw, иначе dev overlay
       }
 
-      const json = (await res.json()) as InvoiceResponse;
-
-      if (!json.paymentUrl) {
-        throw new Error("Payment URL is missing in invoice response.");
+      const paymentUrl = data?.paymentUrl;
+      if (!paymentUrl) {
+        setError("Payment URL is missing in invoice response.");
+        return;
       }
 
-      router.push(json.paymentUrl);
+      router.push(paymentUrl);
     } catch (err: unknown) {
-      console.error(err);
       setError(
         err instanceof Error
           ? err.message
@@ -96,10 +101,14 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
 
   const displayAmount = amount > 0 ? amount.toFixed(2) : "0.00";
 
+  const infoHref =
+    amount > 0
+      ? `/crypto-payment-info?amount=${amount.toFixed(2)}`
+      : `/crypto-payment-info`;
+
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-xl mx-auto px-4 py-10 lg:py-12">
-        {/* Header */}
         <header className="mb-8">
           <button
             type="button"
@@ -122,7 +131,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
         </header>
 
         <div className="space-y-6">
-          {/* Order summary */}
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-900">
@@ -144,7 +152,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
             </p>
           </section>
 
-          {/* Crypto payment info */}
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4 space-y-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">
@@ -159,7 +166,17 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
               </p>
             </div>
 
-            {/* ✅ minimal add: stablecoin selector */}
+            {/* 🔐 Always-visible info link (same styling as in the store) */}
+            <a href={infoHref} className="crypto-info-link">
+              <div className="crypto-info-link-inner">
+                <span className="crypto-info-link-left">
+                  <span className="crypto-info-link-icon">ⓘ</span>
+                  <span>How crypto payments are verified &amp; protected</span>
+                </span>
+                <span className="crypto-info-link-arrow">→</span>
+              </div>
+            </a>
+
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-500">Stablecoin</span>
 
@@ -209,14 +226,12 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
             </ul>
           </section>
 
-          {/* Error */}
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
               {error}
             </div>
           )}
 
-          {/* Button */}
           <section className="flex flex-col gap-2">
             <button
               type="button"

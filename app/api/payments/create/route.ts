@@ -6,7 +6,8 @@ const PSP_API_URL = (
   ""
 ).replace(/\/+$/, "");
 
-// ✅ безопасно читаем JSON
+const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
+
 type JsonObject = Record<string, unknown>;
 
 function extractField<T = unknown>(
@@ -16,7 +17,6 @@ function extractField<T = unknown>(
 ): T | undefined {
   if (!source || typeof source !== "object") return fallback;
   const obj = source as JsonObject;
-
   for (const key of keys) {
     const value = obj[key];
     if (value !== undefined && value !== null) return value as T;
@@ -39,13 +39,22 @@ function getOrigin(req: NextRequest) {
   return req.nextUrl.origin.replace(/\/+$/, "");
 }
 
+async function safeReadBody(res: Response): Promise<unknown> {
+  const ct = res.headers.get("content-type") ?? "";
+  if (ct.includes("application/json")) {
+    return res.json().catch(() => ({}));
+  }
+  const text = await res.text().catch(() => "");
+  return text ? { message: text.slice(0, 500) } : {};
+}
+
 export async function POST(request: NextRequest) {
   const baseUrl = getOrigin(request);
 
   let amount = 0;
   let fiatCurrency = "EUR";
-  let cryptoCurrency = "USDT";
-  let description: string | undefined;
+  let cryptoCurrency: "USDT" | "USDC" = "USDT";
+  let orderId: string | undefined;
 
   try {
     const body = (await request.json().catch(() => ({}))) as JsonObject;
@@ -58,27 +67,20 @@ export async function POST(request: NextRequest) {
       "EUR"
     );
 
-    cryptoCurrency = toUpperSafe(
+    const token = toUpperSafe(
       extractField(body, ["cryptoCurrency", "token"], "USDT"),
       "USDT"
     );
+    cryptoCurrency = token === "USDC" ? "USDC" : "USDT";
 
-    description = extractField<string>(
-      body,
-      ["description", "orderId"],
-      undefined
-    );
+    orderId = extractField<string>(body, ["orderId", "description"], undefined);
   } catch {
     // ignore
   }
 
   if (!amount || amount <= 0) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "VALIDATION_ERROR",
-        message: "amount must be greater than 0",
-      },
+      { ok: false, error: "VALIDATION_ERROR", message: "amount must be > 0" },
       { status: 400 }
     );
   }
@@ -90,25 +92,47 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ✅ важно: если бэк требует Bearer — ключ обязателен
+  if (!PSP_API_KEY) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "CONFIG_ERROR",
+        message: "PSP_API_KEY is empty (set PSP_API_KEY in .env and restart)",
+      },
+      { status: 500 }
+    );
+  }
+
   try {
     const pspRes = await fetch(`${PSP_API_URL}/invoices`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${PSP_API_KEY}`,
+      },
       body: JSON.stringify({
+        merchantId: "mrc_test_001",
+        orderId: orderId ?? `demo_${Date.now()}`,
         fiatAmount: amount,
         fiatCurrency,
-        cryptoCurrency, // ✅ отправляем выбранный токен (USDT/USDC)
-        description,
+        cryptoCurrency,
+        // ✅ чтобы совпадало с вашим текущим бэком/флоу
+        network: "TRON",
+        expiresInMinutes: 10,
+        // webhookUrl здесь не обязателен для demo-store,
+        // он нужен PSP-dashboard/merchant-уровню
       }),
     });
 
     const backendStatus = `HTTP ${pspRes.status}`;
-    const data = (await pspRes.json().catch(() => ({}))) as JsonObject;
+    const data = (await safeReadBody(pspRes)) as JsonObject;
 
     if (!pspRes.ok) {
       const msg =
         extractField<string>(data, ["message", "error"], undefined) ??
-        `PSP responded with status ${pspRes.status}`;
+        `PSP responded with ${backendStatus}`;
+
       return NextResponse.json(
         {
           ok: false,
@@ -138,69 +162,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const normalizedAmount =
-      extractField<number>(
-        data,
-        ["amount", "fiatAmount", "fiat_amount"],
-        amount
-      ) ?? amount;
-
-    const normalizedFiatCurrency = toUpperSafe(
-      extractField(
-        data,
-        ["fiatCurrency", "fiat_currency", "currency"],
-        fiatCurrency
-      ),
-      fiatCurrency
-    );
-
-    // ✅ ВАЖНО: если PSP не вернул cryptoCurrency — используем то, что выбрал клиент
-    const normalizedCryptoCurrency = toUpperSafe(
-      extractField(
-        data,
-        ["cryptoCurrency", "crypto_currency", "token"],
-        cryptoCurrency
-      ),
-      cryptoCurrency
-    );
-
-    const cryptoAmount =
-      extractField<number>(data, [
-        "cryptoAmount",
-        "amountCrypto",
-        "crypto_amount",
-      ]) ?? undefined;
-
-    const expiresAt =
-      extractField<string>(data, ["expiresAt", "expires_at", "expiration"]) ??
-      undefined;
-
-    // ✅ FIX: сначала берём paymentUrl, который вернул PSP (psp-core),
-    // иначе fallback на текущий фронт
     const backendPaymentUrl =
       extractField<string>(data, ["paymentUrl", "payment_url"], undefined) ??
       undefined;
 
+    // ✅ если бэк вернул paymentUrl — используем его
+    // fallback (на случай локального бэка без PAYMENT_PAGE_BASE_URL)
     const paymentUrl =
       backendPaymentUrl ??
-      `${baseUrl}/open/pay/${encodeURIComponent(
-        invoiceId
-      )}?amount=${encodeURIComponent(
-        normalizedAmount
-      )}&fiat=${encodeURIComponent(
-        normalizedFiatCurrency
-      )}&crypto=${encodeURIComponent(normalizedCryptoCurrency)}`;
+      `${baseUrl}/open/pay/${encodeURIComponent(invoiceId)}`;
 
     return NextResponse.json(
       {
         ok: true,
         invoiceId,
         paymentUrl,
-        amount: normalizedAmount,
-        fiatCurrency: normalizedFiatCurrency,
-        cryptoCurrency: normalizedCryptoCurrency,
-        cryptoAmount,
-        expiresAt,
+        amount:
+          extractField<number>(data, ["fiatAmount", "fiat_amount"], amount) ??
+          amount,
+        fiatCurrency: toUpperSafe(
+          extractField(data, ["fiatCurrency", "fiat_currency"], fiatCurrency),
+          fiatCurrency
+        ),
+        cryptoCurrency: toUpperSafe(
+          extractField(
+            data,
+            ["cryptoCurrency", "crypto_currency"],
+            cryptoCurrency
+          ),
+          cryptoCurrency
+        ),
+        cryptoAmount:
+          extractField<number>(data, ["cryptoAmount", "crypto_amount"]) ??
+          undefined,
+        expiresAt:
+          extractField<string>(data, ["expiresAt", "expires_at"]) ?? undefined,
         backendStatus,
       },
       { status: 200 }
