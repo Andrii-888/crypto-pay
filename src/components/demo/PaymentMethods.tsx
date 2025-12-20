@@ -40,21 +40,6 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
       </a>
 
       <div className="space-y-2">
-        {/* Bank transfer - disabled */}
-        <button
-          type="button"
-          disabled
-          className="w-full flex items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 cursor-not-allowed shadow-sm"
-        >
-          <span className="flex items-center gap-2">
-            <span className="h-6 w-6 rounded-md bg-gray-200 flex items-center justify-center text-[13px]">
-              🏦
-            </span>
-            <span className="font-medium">Bank transfer (coming soon)</span>
-          </span>
-          <span className="text-[10px]">IBAN</span>
-        </button>
-
         {/* Crypto Pay - active */}
         <button
           type="button"
@@ -77,6 +62,20 @@ export function PaymentMethods({ hasItems, cartTotal }: PaymentMethodsProps) {
             </span>
           </span>
           <span className="text-[10px]">{hasItems ? "→" : ""}</span>
+        </button>
+        {/* Bank transfer - disabled */}
+        <button
+          type="button"
+          disabled
+          className="w-full flex items-center justify-between rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-xs text-gray-400 cursor-not-allowed shadow-sm"
+        >
+          <span className="flex items-center gap-2">
+            <span className="h-6 w-6 rounded-md bg-gray-200 flex items-center justify-center text-[13px]">
+              🏦
+            </span>
+            <span className="font-medium">Bank transfer (coming soon)</span>
+          </span>
+          <span className="text-[10px]">IBAN</span>
         </button>
         {/* Card - disabled */}
         <button
