@@ -1,3 +1,4 @@
+// src/components/cryptoPay/CryptoPayWalletSection.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -7,6 +8,10 @@ type CryptoPayWalletSectionProps = {
   cryptoCurrency: string;
   cryptoAmount: number;
   invoiceId: string;
+
+  // ✅ NEW: динамика из PSP (после detected)
+  walletAddress?: string | null;
+  network?: string | null; // "TRON" | "BSC" | ...
 };
 
 type NetworkKey = "trc20" | "bep20";
@@ -67,27 +72,49 @@ function normalizeToken(v: string): TokenKey {
   return t === "USDC" ? "USDC" : "USDT";
 }
 
+function inferNetworkKey(
+  network?: string | null,
+  token?: TokenKey
+): NetworkKey {
+  const n = String(network || "")
+    .trim()
+    .toUpperCase();
+
+  if (n === "TRON" || n === "TRC20") return "trc20";
+  if (n === "BSC" || n === "BNB" || n === "BEP20") return "bep20";
+
+  // fallback как было
+  return token === "USDC" ? "bep20" : "trc20";
+}
+
 export function CryptoPayWalletSection({
   cryptoCurrency,
   cryptoAmount,
   invoiceId,
+  walletAddress,
+  network: pspNetwork,
 }: CryptoPayWalletSectionProps) {
   const token = normalizeToken(cryptoCurrency);
 
-  // ✅ для USDC сразу BEP20, для USDT — TRC20
-  const defaultNet: NetworkKey = token === "USDC" ? "bep20" : "trc20";
+  // ✅ сеть по умолчанию: из PSP network если есть, иначе как раньше
+  const defaultNet = inferNetworkKey(pspNetwork, token);
   const [activeNet, setActiveNet] = useState<NetworkKey>(defaultNet);
 
-  // ✅ если токен меняется (USDT <-> USDC), тоже меняем сеть автоматически
+  // ✅ если токен меняется — пересчёт сети
   useEffect(() => {
-    setActiveNet(token === "USDC" ? "bep20" : "trc20");
-  }, [token]);
+    setActiveNet(inferNetworkKey(pspNetwork, token));
+  }, [token, pspNetwork]);
 
   const [copiedKind, setCopiedKind] = useState<CopyKind>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  const network = TOKEN_CONFIG[token][activeNet];
+  const networkCfg = TOKEN_CONFIG[token][activeNet];
+
+  // ✅ адрес: если PSP дал walletAddress — показываем его, иначе demo address
+  const addressToShow = walletAddress?.trim()
+    ? walletAddress.trim()
+    : networkCfg.address;
 
   const amountNumber = useMemo(() => cryptoAmount.toFixed(2), [cryptoAmount]);
   const amountText = useMemo(
@@ -101,8 +128,8 @@ export function CryptoPayWalletSection({
     p.set("currency", token);
     p.set("invoice", invoiceId);
     p.set("network", activeNet);
-    return `${network.address}?${p.toString()}`;
-  }, [network.address, amountNumber, token, invoiceId, activeNet]);
+    return `${addressToShow}?${p.toString()}`;
+  }, [addressToShow, amountNumber, token, invoiceId, activeNet]);
 
   async function copy(text: string, kind: CopyKind) {
     try {
@@ -181,10 +208,18 @@ export function CryptoPayWalletSection({
       </div>
 
       {/* ✅ Network UI:
-          - USDC: фиксируем BEP20 и не показываем переключатель
-          - USDT: показываем переключатель как раньше
+          - если PSP уже дал walletAddress (detected) — сеть фиксируем
+          - USDC: как раньше фиксируем BEP20
+          - USDT: переключатель только пока нет PSP wallet
       */}
-      {token === "USDC" ? (
+      {walletAddress ? (
+        <div className="inline-flex items-center gap-2">
+          <span className="text-[11px] text-slate-500">Network</span>
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-900">
+            {networkCfg.label}
+          </span>
+        </div>
+      ) : token === "USDC" ? (
         <div className="inline-flex items-center gap-2">
           <span className="text-[11px] text-slate-500">Network</span>
           <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-900">
@@ -220,7 +255,7 @@ export function CryptoPayWalletSection({
 
       {/* Description */}
       <div className="text-xs text-slate-600">
-        <p className="font-medium">{network.description}</p>
+        <p className="font-medium">{networkCfg.description}</p>
       </div>
 
       {/* Address + Copy */}
@@ -230,12 +265,12 @@ export function CryptoPayWalletSection({
         <div className="rounded-xl bg-slate-900 px-3 py-2.5 text-slate-50 space-y-2">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] truncate flex-1">
-              {network.address}
+              {addressToShow}
             </span>
 
             <button
               type="button"
-              onClick={() => copy(network.address, "address")}
+              onClick={() => copy(addressToShow, "address")}
               className="inline-flex items-center rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 transition"
             >
               {copiedKind === "address" ? "Copied" : "Copy address"}
@@ -263,7 +298,8 @@ export function CryptoPayWalletSection({
 
         <p className="text-[11px] text-slate-400">
           Send only <span className="font-medium">{token}</span> on{" "}
-          <span className="font-medium">{network.code}</span> to this address.
+          <span className="font-medium">{networkCfg.code}</span> to this
+          address.
         </p>
       </div>
 

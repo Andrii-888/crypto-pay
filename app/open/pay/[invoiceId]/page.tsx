@@ -3,11 +3,7 @@
 import Link from "next/link";
 import type { InvoiceData } from "@/lib/invoiceStore";
 
-import { CryptoPayWalletSection } from "@/components/cryptoPay/CryptoPayWalletSection";
-import { CryptoPayHeader } from "@/components/cryptoPay/CryptoPayHeader";
-import { CryptoPayAmountCard } from "@/components/cryptoPay/CryptoPayAmountCard";
-import { CryptoPayTimer } from "@/components/cryptoPay/CryptoPayTimer";
-import { CryptoPayStatusWithPolling } from "@/components/cryptoPay/CryptoPayStatusWithPolling";
+import { CryptoPayPaymentClient } from "@/components/cryptoPay/CryptoPayPaymentClient";
 
 const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
 
@@ -23,6 +19,42 @@ interface PspInvoice {
   cryptoCurrency: string;
   status: PspInvoiceStatus;
   paymentUrl: string;
+
+  // ✅ дополнительные поля PSP Core (нужны для динамики txHash/walletAddress)
+  grossAmount?: number | null;
+  feeAmount?: number | null;
+  netAmount?: number | null;
+  feeBps?: number | null;
+  feePayer?: "merchant" | "customer" | null;
+
+  fxRate?: number | null;
+  fxPair?: string | null;
+
+  network?: string | null;
+
+  txHash?: string | null;
+  walletAddress?: string | null;
+  txStatus?: "pending" | "detected" | "confirmed" | null;
+
+  confirmations?: number | null;
+  requiredConfirmations?: number | null;
+
+  detectedAt?: string | null;
+  confirmedAt?: string | null;
+
+  riskScore?: number | null;
+  amlStatus?: "clean" | "dirty" | "unknown" | null;
+
+  assetRiskScore?: number | null;
+  assetStatus?: "clean" | "dirty" | "unknown" | null;
+
+  merchantId?: string | null;
+
+  decisionStatus?: "none" | "approved" | "rejected" | null;
+  decisionReasonCode?: string | null;
+  decisionReasonText?: string | null;
+  decidedAt?: string | null;
+  decidedBy?: string | null;
 }
 
 type PageProps = {
@@ -62,13 +94,50 @@ async function fetchInvoiceFromPsp(
 
     return {
       invoiceId: data.id,
+      createdAt: data.createdAt ?? null,
+      expiresAt: data.expiresAt,
+
       fiatAmount: data.fiatAmount,
       fiatCurrency: data.fiatCurrency,
       cryptoAmount: data.cryptoAmount,
       cryptoCurrency: data.cryptoCurrency,
+
       status: data.status,
-      expiresAt: data.expiresAt,
       paymentUrl: data.paymentUrl,
+
+      // money / fx
+      grossAmount: data.grossAmount ?? null,
+      feeAmount: data.feeAmount ?? null,
+      netAmount: data.netAmount ?? null,
+      feeBps: data.feeBps ?? null,
+      feePayer: data.feePayer ?? null,
+
+      fxRate: data.fxRate ?? null,
+      fxPair: data.fxPair ?? null,
+
+      // chain / tx
+      network: data.network ?? null,
+      txHash: data.txHash ?? null,
+      walletAddress: data.walletAddress ?? null,
+      txStatus: data.txStatus ?? null,
+      confirmations: data.confirmations ?? null,
+      requiredConfirmations: data.requiredConfirmations ?? null,
+      detectedAt: data.detectedAt ?? null,
+      confirmedAt: data.confirmedAt ?? null,
+
+      // aml / decision
+      riskScore: data.riskScore ?? null,
+      amlStatus: data.amlStatus ?? null,
+      assetRiskScore: data.assetRiskScore ?? null,
+      assetStatus: data.assetStatus ?? null,
+
+      merchantId: data.merchantId ?? null,
+
+      decisionStatus: data.decisionStatus ?? null,
+      decisionReasonCode: data.decisionReasonCode ?? null,
+      decisionReasonText: data.decisionReasonText ?? null,
+      decidedAt: data.decidedAt ?? null,
+      decidedBy: data.decidedBy ?? null,
     };
   } catch {
     return null;
@@ -105,6 +174,34 @@ export default async function PaymentPage(props: PageProps) {
         status: "waiting",
         expiresAt: getDemoExpiresAt(),
         paymentUrl: `/open/pay/${invoiceId}`,
+
+        // чтобы тип совпадал
+        createdAt: null,
+        grossAmount: null,
+        feeAmount: null,
+        netAmount: null,
+        feeBps: null,
+        feePayer: null,
+        fxRate: null,
+        fxPair: null,
+        network: null,
+        txHash: null,
+        walletAddress: null,
+        txStatus: "pending",
+        confirmations: 0,
+        requiredConfirmations: null,
+        detectedAt: null,
+        confirmedAt: null,
+        riskScore: null,
+        amlStatus: null,
+        assetRiskScore: null,
+        assetStatus: null,
+        merchantId: null,
+        decisionStatus: "none",
+        decisionReasonCode: null,
+        decisionReasonText: null,
+        decidedAt: null,
+        decidedBy: null,
       };
     }
   }
@@ -125,22 +222,9 @@ export default async function PaymentPage(props: PageProps) {
     );
   }
 
-  const {
-    fiatAmount,
-    fiatCurrency,
-    cryptoAmount,
-    cryptoCurrency,
-    expiresAt,
-    status,
-  } = finalInvoice;
-
   const checkoutHref = `/checkout?amount=${encodeURIComponent(
-    fiatAmount.toFixed(2)
+    finalInvoice.fiatAmount.toFixed(2)
   )}`;
-
-  const isWaiting = status === "waiting";
-  const isConfirmed = status === "confirmed";
-  const isFailed = status === "expired" || status === "rejected";
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -156,62 +240,8 @@ export default async function PaymentPage(props: PageProps) {
           </Link>
         </div>
 
-        {/* Header */}
-        <CryptoPayHeader invoiceId={finalInvoice.invoiceId} />
-
-        {/* Status with polling */}
-        <CryptoPayStatusWithPolling
-          invoiceId={finalInvoice.invoiceId}
-          initialStatus={status as PspInvoiceStatus}
-          expiresAt={expiresAt}
-        />
-
-        {/* Верхний блок с summary */}
-        <div className="mt-3 mb-4">
-          {isConfirmed && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              <div className="font-semibold mb-0.5">
-                Payment successfully confirmed
-              </div>
-              <div>
-                The merchant has received your crypto payment. You can safely
-                close this page.
-              </div>
-            </div>
-          )}
-
-          {isFailed && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-              <div className="font-semibold mb-0.5">Payment not completed</div>
-              <div>
-                This payment link is no longer valid. Please return to the store
-                checkout and create a new payment.
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          <CryptoPayAmountCard
-            fiatAmount={fiatAmount}
-            fiatCurrency={fiatCurrency}
-            cryptoAmount={cryptoAmount}
-            cryptoCurrency={cryptoCurrency}
-          />
-
-          {/* Таймер, кошелёк показываем только пока ожидаем оплату */}
-          {isWaiting && (
-            <>
-              <CryptoPayTimer expiresAt={expiresAt} />
-
-              <CryptoPayWalletSection
-                invoiceId={finalInvoice.invoiceId}
-                cryptoCurrency={cryptoCurrency}
-                cryptoAmount={cryptoAmount}
-              />
-            </>
-          )}
-        </div>
+        {/* ✅ Всё остальное рендерим в client-wrapper, чтобы работал polling invoice snapshot */}
+        <CryptoPayPaymentClient initialInvoice={finalInvoice} />
       </div>
     </main>
   );

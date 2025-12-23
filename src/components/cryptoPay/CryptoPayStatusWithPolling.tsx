@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CryptoPayStatusBadge } from "./CryptoPayStatusBadge";
+import type { InvoiceData } from "@/lib/invoiceStore";
 
 export type InvoiceStatus =
   | "waiting"
@@ -16,13 +17,12 @@ type Props = {
   invoiceId: string;
   initialStatus: InvoiceStatus;
   expiresAt: string;
+
+  // ✅ новый callback: отдаём наружу полный invoice snapshot
+  onInvoiceUpdate?: (invoice: InvoiceData) => void;
 };
 
-type PspInvoice = {
-  id: string;
-  status: InvoiceStatus;
-  expiresAt?: string;
-};
+type PspInvoice = any;
 
 const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
 
@@ -37,10 +37,64 @@ function isExpiredByTime(expiresAt?: string) {
   return Date.now() >= t;
 }
 
+function mapPspInvoiceToInvoiceData(data: PspInvoice): InvoiceData {
+  return {
+    invoiceId: data.id,
+
+    createdAt: data.createdAt ?? null,
+    expiresAt: data.expiresAt,
+
+    fiatAmount: data.fiatAmount,
+    fiatCurrency: data.fiatCurrency,
+
+    cryptoAmount: data.cryptoAmount,
+    cryptoCurrency: data.cryptoCurrency,
+
+    status: data.status,
+    paymentUrl: data.paymentUrl,
+
+    grossAmount: data.grossAmount ?? null,
+    feeAmount: data.feeAmount ?? null,
+    netAmount: data.netAmount ?? null,
+    feeBps: data.feeBps ?? null,
+    feePayer: data.feePayer ?? null,
+
+    fxRate: data.fxRate ?? null,
+    fxPair: data.fxPair ?? null,
+
+    network: data.network ?? null,
+
+    txHash: data.txHash ?? null,
+    walletAddress: data.walletAddress ?? null,
+    txStatus: data.txStatus ?? null,
+
+    confirmations: data.confirmations ?? null,
+    requiredConfirmations: data.requiredConfirmations ?? null,
+
+    detectedAt: data.detectedAt ?? null,
+    confirmedAt: data.confirmedAt ?? null,
+
+    riskScore: data.riskScore ?? null,
+    amlStatus: data.amlStatus ?? null,
+
+    assetRiskScore: data.assetRiskScore ?? null,
+    assetStatus: data.assetStatus ?? null,
+
+    merchantId: data.merchantId ?? null,
+
+    decisionStatus: data.decisionStatus ?? null,
+    decisionReasonCode: data.decisionReasonCode ?? null,
+    decisionReasonText: data.decisionReasonText ?? null,
+    decidedAt: data.decidedAt ?? null,
+    decidedBy: data.decidedBy ?? null,
+  };
+}
+
 export function CryptoPayStatusWithPolling({
   invoiceId,
   initialStatus,
   expiresAt,
+  onInvoiceUpdate,
 }: Props) {
   const router = useRouter();
 
@@ -69,7 +123,6 @@ export function CryptoPayStatusWithPolling({
     }
 
     const timer = setTimeout(() => {
-      // если к моменту истечения не финальный — ставим expired
       if (!isFinalStatus(statusRef.current)) {
         setStatus("expired");
       }
@@ -78,24 +131,18 @@ export function CryptoPayStatusWithPolling({
     return () => clearTimeout(timer);
   }, [expiresAt, status]);
 
-  // 🛰 Polling статуса раз в 5 сек (из PSP-core)
+  // 🛰 Polling полного invoice snapshot раз в 3 сек (из PSP-core)
   useEffect(() => {
     let cancelled = false;
     let timeout: ReturnType<typeof setTimeout> | null = null;
 
-    // уже финальный — не поллим
     if (isFinalStatus(statusRef.current)) return;
-
-    // нет API — поллинг выключен, живём на demo-логике + expiresAt
     if (!PSP_API_URL) return;
 
     const tick = async () => {
       if (cancelled) return;
-
-      // если уже финальный — не делаем запросы
       if (isFinalStatus(statusRef.current)) return;
 
-      // если уже истёк по времени — не дергаем PSP
       if (isExpiredByTime(expiresAt)) {
         setStatus("expired");
         return;
@@ -104,16 +151,21 @@ export function CryptoPayStatusWithPolling({
       try {
         const res = await fetch(
           `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
-          {
-            cache: "no-store",
-          }
+          { cache: "no-store" }
         );
 
         if (res.ok) {
           const data = (await res.json()) as PspInvoice;
 
+          // ✅ отдаём наружу весь invoice
+          if (data?.id) {
+            onInvoiceUpdate?.(mapPspInvoiceToInvoiceData(data));
+          }
+
+          // ✅ status берём из нормализованного invoice, чтобы не словить "pending"
           if (data?.status) {
-            const next = data.status;
+            const normalized = mapPspInvoiceToInvoiceData(data);
+            const next = normalized.status as InvoiceStatus;
 
             if (next !== statusRef.current) {
               statusRef.current = next;
@@ -124,21 +176,19 @@ export function CryptoPayStatusWithPolling({
           }
         }
       } catch {
-        // игнорируем, попробуем снова
+        // ignore
       }
 
-      // планируем следующий тик
-      timeout = setTimeout(tick, 5000);
+      timeout = setTimeout(tick, 3000);
     };
 
-    // первый тик сразу
     void tick();
 
     return () => {
       cancelled = true;
       if (timeout) clearTimeout(timeout);
     };
-  }, [invoiceId, expiresAt]);
+  }, [invoiceId, expiresAt, onInvoiceUpdate]);
 
   // 🔁 Авто-редирект на success при confirmed (один раз)
   useEffect(() => {

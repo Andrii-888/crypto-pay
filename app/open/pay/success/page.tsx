@@ -1,55 +1,51 @@
 // app/open/pay/success/page.tsx
-import Link from "next/link";
-import type { InvoiceData } from "@/lib/invoiceStore";
+"use client";
 
-const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type PspInvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
 interface PspInvoice {
   id: string;
-  createdAt: string;
+  createdAt?: string | null;
   expiresAt: string;
+
   fiatAmount: number;
   fiatCurrency: string;
+
   cryptoAmount: number;
   cryptoCurrency: string;
+
   status: PspInvoiceStatus;
   paymentUrl: string;
+
   network?: string | null;
+
   txHash?: string | null;
   walletAddress?: string | null;
-  merchantId?: string | null;
+  txStatus?: "pending" | "detected" | "confirmed" | null;
+
+  confirmations?: number | null;
+  requiredConfirmations?: number | null;
+
+  detectedAt?: string | null;
+  confirmedAt?: string | null;
+
+  amlStatus?: "clean" | "dirty" | "unknown" | null;
+  riskScore?: number | null;
+  assetStatus?: "clean" | "dirty" | "unknown" | null;
+  assetRiskScore?: number | null;
+  decisionStatus?: "none" | "approved" | "rejected" | null;
+  decisionReasonText?: string | null;
 }
 
-type PageProps = {
-  searchParams?: Promise<{
-    invoiceId?: string | string[];
-  }>;
-};
+const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+const POLL_MS = 2000;
 
-function normalizeParam(value?: string | string[]): string | undefined {
-  if (!value) return undefined;
-  return Array.isArray(value) ? value[0] : value;
-}
-
-async function fetchInvoiceFromPsp(
-  invoiceId: string
-): Promise<PspInvoice | null> {
-  if (!PSP_API_URL) return null;
-
-  try {
-    const res = await fetch(
-      `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
-      {
-        cache: "no-store",
-      }
-    );
-    if (!res.ok) return null;
-    return (await res.json()) as PspInvoice;
-  } catch {
-    return null;
-  }
+function isFinalStatus(s?: PspInvoiceStatus | null) {
+  return s === "confirmed" || s === "expired" || s === "rejected";
 }
 
 function formatMoney(amount: number, currency: string) {
@@ -95,33 +91,88 @@ function statusUi(status?: PspInvoiceStatus) {
       return {
         title: "Payment status",
         subtitle:
-          "This page shows the final invoice state once it is available from the payment provider.",
+          "This page shows the invoice state from the payment provider and updates automatically.",
         badge: "Unknown",
         badgeCls: "bg-slate-100 text-slate-700 border-slate-200",
       };
   }
 }
 
-export default async function CryptoPaySuccessPage(props: PageProps) {
-  const sp = (await props.searchParams) ?? {};
-  const invoiceId = normalizeParam(sp.invoiceId);
+export default function CryptoPaySuccessPage() {
+  const sp = useSearchParams();
+  const invoiceId = sp.get("invoiceId")?.trim() || "";
 
-  const pspInvoice = invoiceId ? await fetchInvoiceFromPsp(invoiceId) : null;
+  const [invoice, setInvoice] = useState<PspInvoice | null>(null);
+  const [loading, setLoading] = useState(Boolean(invoiceId));
+  const [hint, setHint] = useState<string | null>(null);
 
-  const invoice: InvoiceData | null = pspInvoice
-    ? {
-        invoiceId: pspInvoice.id,
-        fiatAmount: Number(pspInvoice.fiatAmount),
-        fiatCurrency: pspInvoice.fiatCurrency,
-        cryptoAmount: Number(pspInvoice.cryptoAmount),
-        cryptoCurrency: pspInvoice.cryptoCurrency,
-        status: pspInvoice.status,
-        expiresAt: pspInvoice.expiresAt,
-        paymentUrl: pspInvoice.paymentUrl,
+  const stopRef = useRef(false);
+
+  const ui = useMemo(() => statusUi(invoice?.status), [invoice?.status]);
+
+  // polling
+  useEffect(() => {
+    stopRef.current = false;
+
+    if (!invoiceId) {
+      setLoading(false);
+      setHint("Tip: open this page as /open/pay/success?invoiceId=...");
+      return;
+    }
+
+    if (!PSP_API_URL) {
+      setLoading(false);
+      setHint("NEXT_PUBLIC_API_URL is not set on Vercel.");
+      return;
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async () => {
+      if (stopRef.current) return;
+
+      try {
+        const res = await fetch(
+          `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
+          { cache: "no-store" }
+        );
+
+        if (res.ok) {
+          const data = (await res.json()) as PspInvoice;
+          if (data?.id) {
+            setInvoice(data);
+            setHint(null);
+          }
+        } else {
+          // не спамим красным — просто оставим подсказку
+          setHint("Provider data is not available yet.");
+        }
+      } catch {
+        setHint("Provider is temporarily unavailable.");
+      } finally {
+        setLoading(false);
       }
-    : null;
 
-  const ui = statusUi(pspInvoice?.status);
+      // останавливаем polling только когда:
+      // 1) статус финальный И 2) есть txHash или txStatus уже не pending
+      const s = invoice?.status;
+      const txReady =
+        Boolean(invoice?.txHash) ||
+        (invoice?.txStatus && invoice?.txStatus !== "pending");
+
+      if (isFinalStatus(s) && txReady) return;
+
+      timeout = setTimeout(tick, POLL_MS);
+    };
+
+    void tick();
+
+    return () => {
+      stopRef.current = true;
+      if (timeout) clearTimeout(timeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceId]);
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -139,6 +190,12 @@ export default async function CryptoPaySuccessPage(props: PageProps) {
           <p className="mt-2 max-w-sm mx-auto text-xs text-slate-500">
             {ui.subtitle}
           </p>
+
+          {loading ? (
+            <p className="mt-2 text-[11px] text-slate-400">
+              Loading provider data…
+            </p>
+          ) : null}
         </header>
 
         {/* Summary card */}
@@ -146,7 +203,7 @@ export default async function CryptoPaySuccessPage(props: PageProps) {
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Invoice</span>
             <span className="font-mono text-[11px] text-slate-900 truncate max-w-[60%]">
-              {invoiceId ?? "—"}
+              {invoiceId || "—"}
             </span>
           </div>
 
@@ -180,38 +237,33 @@ export default async function CryptoPaySuccessPage(props: PageProps) {
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Network</span>
-            <span className="text-slate-900">{pspInvoice?.network ?? "—"}</span>
+            <span className="text-slate-900">{invoice?.network ?? "—"}</span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Tx hash</span>
             <span className="font-mono text-[11px] text-slate-900 truncate max-w-[60%]">
-              {pspInvoice?.txHash ?? "—"}
+              {invoice?.txHash ?? "—"}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Wallet</span>
             <span className="font-mono text-[11px] text-slate-900 truncate max-w-[60%]">
-              {pspInvoice?.walletAddress ?? "—"}
+              {invoice?.walletAddress ?? "—"}
             </span>
           </div>
 
-          {/* мягкие подсказки, без красных ошибок */}
-          {!invoiceId && (
+          {hint ? (
             <p className="pt-1 text-[11px] text-slate-400">
-              Tip: open this page as{" "}
-              <span className="font-mono">/open/pay/success?invoiceId=...</span>
+              {hint}{" "}
+              {PSP_API_URL ? (
+                <>
+                  (API: <span className="font-mono">{PSP_API_URL}</span>)
+                </>
+              ) : null}
             </p>
-          )}
-
-          {invoiceId && !invoice && (
-            <p className="pt-1 text-[11px] text-slate-400">
-              Provider data is not available yet. If you are running locally,
-              make sure <span className="font-mono">NEXT_PUBLIC_API_URL</span>{" "}
-              points to PSP-core.
-            </p>
-          )}
+          ) : null}
         </section>
 
         {/* CTA */}
