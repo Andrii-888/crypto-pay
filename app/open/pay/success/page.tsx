@@ -1,6 +1,5 @@
 // app/open/pay/success/page.tsx
 import Link from "next/link";
-import { Suspense } from "react";
 import type { InvoiceData } from "@/lib/invoiceStore";
 
 export const runtime = "nodejs";
@@ -28,6 +27,32 @@ interface PspInvoice {
   txHash?: string | null;
   walletAddress?: string | null;
   merchantId?: string | null;
+}
+
+type PageProps = {
+  searchParams?: {
+    invoiceId?: string | string[];
+  };
+};
+
+function normalizeParam(value?: string | string[]): string | undefined {
+  if (!value) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+async function fetchInvoiceFromPsp(
+  invoiceId: string
+): Promise<PspInvoice | null> {
+  if (!PSP_API_URL) return null;
+
+  const url = `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json()) as PspInvoice;
+  } catch {
+    return null;
+  }
 }
 
 function formatMoney(amount: number, currency: string) {
@@ -80,48 +105,9 @@ function statusUi(status?: PspInvoiceStatus) {
   }
 }
 
-async function fetchInvoiceFromPsp(
-  invoiceId: string
-): Promise<PspInvoice | null> {
-  if (!PSP_API_URL) return null;
+export default async function CryptoPaySuccessPage(props: PageProps) {
+  const invoiceId = normalizeParam(props.searchParams?.invoiceId);
 
-  try {
-    const res = await fetch(
-      `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
-      { cache: "no-store" }
-    );
-    if (!res.ok) return null;
-    return (await res.json()) as PspInvoice;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * ✅ Client component (uses useSearchParams) MUST be inside Suspense.
- * We keep the page itself as a Server Component to satisfy Next build.
- */
-function SuccessClient() {
-  "use client";
-
-  // IMPORTANT: this hook is the reason for Suspense boundary requirement
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { useSearchParams } =
-    require("next/navigation") as typeof import("next/navigation");
-  const sp = useSearchParams();
-  const invoiceId = sp?.get("invoiceId") ?? "";
-
-  // We render the full UI via server data fetch in a nested server component
-  // by navigating to the same route with proper query.
-  // But we can also just render a link and let server side handle it.
-  // Here: we just render a tiny “loader shell” and server component will do the real work.
-  return <SuccessServer invoiceId={invoiceId} />;
-}
-
-/**
- * Server component that does the fetch and renders the page.
- */
-async function SuccessServer({ invoiceId }: { invoiceId: string }) {
   const pspInvoice = invoiceId ? await fetchInvoiceFromPsp(invoiceId) : null;
 
   const invoice: InvoiceData | null = pspInvoice
@@ -142,7 +128,6 @@ async function SuccessServer({ invoiceId }: { invoiceId: string }) {
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-xl mx-auto px-4 py-10 lg:py-12">
-        {/* Header */}
         <header className="mb-6 text-center">
           <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
             <span className="text-base font-semibold text-emerald-700">✓</span>
@@ -157,12 +142,11 @@ async function SuccessServer({ invoiceId }: { invoiceId: string }) {
           </p>
         </header>
 
-        {/* Summary card */}
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Invoice</span>
             <span className="font-mono text-[11px] text-slate-900 truncate max-w-[60%]">
-              {invoiceId || "—"}
+              {invoiceId ?? "—"}
             </span>
           </div>
 
@@ -230,7 +214,6 @@ async function SuccessServer({ invoiceId }: { invoiceId: string }) {
           )}
         </section>
 
-        {/* CTA */}
         <div className="mt-8 flex justify-center">
           <Link
             href="/"
@@ -241,25 +224,5 @@ async function SuccessServer({ invoiceId }: { invoiceId: string }) {
         </div>
       </div>
     </main>
-  );
-}
-
-export default function CryptoPaySuccessPage() {
-  return (
-    <Suspense
-      fallback={
-        <main className="min-h-screen bg-slate-50">
-          <div className="max-w-xl mx-auto px-4 py-10 lg:py-12">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-sm text-slate-700">
-                Loading payment status…
-              </div>
-            </div>
-          </div>
-        </main>
-      }
-    >
-      <SuccessClient />
-    </Suspense>
   );
 }
