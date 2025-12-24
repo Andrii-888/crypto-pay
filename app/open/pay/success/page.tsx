@@ -1,51 +1,33 @@
 // app/open/pay/success/page.tsx
-"use client";
-
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import type { InvoiceData } from "@/lib/invoiceStore";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const PSP_API_URL = (
+  process.env.PSP_API_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  ""
+).replace(/\/+$/, "");
 
 type PspInvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
 interface PspInvoice {
   id: string;
-  createdAt?: string | null;
+  createdAt: string;
   expiresAt: string;
-
   fiatAmount: number;
   fiatCurrency: string;
-
   cryptoAmount: number;
   cryptoCurrency: string;
-
   status: PspInvoiceStatus;
   paymentUrl: string;
-
   network?: string | null;
-
   txHash?: string | null;
   walletAddress?: string | null;
-  txStatus?: "pending" | "detected" | "confirmed" | null;
-
-  confirmations?: number | null;
-  requiredConfirmations?: number | null;
-
-  detectedAt?: string | null;
-  confirmedAt?: string | null;
-
-  amlStatus?: "clean" | "dirty" | "unknown" | null;
-  riskScore?: number | null;
-  assetStatus?: "clean" | "dirty" | "unknown" | null;
-  assetRiskScore?: number | null;
-  decisionStatus?: "none" | "approved" | "rejected" | null;
-  decisionReasonText?: string | null;
-}
-
-const PSP_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
-const POLL_MS = 2000;
-
-function isFinalStatus(s?: PspInvoiceStatus | null) {
-  return s === "confirmed" || s === "expired" || s === "rejected";
+  merchantId?: string | null;
 }
 
 function formatMoney(amount: number, currency: string) {
@@ -91,88 +73,71 @@ function statusUi(status?: PspInvoiceStatus) {
       return {
         title: "Payment status",
         subtitle:
-          "This page shows the invoice state from the payment provider and updates automatically.",
+          "This page shows the final invoice state once it is available from the payment provider.",
         badge: "Unknown",
         badgeCls: "bg-slate-100 text-slate-700 border-slate-200",
       };
   }
 }
 
-export default function CryptoPaySuccessPage() {
+async function fetchInvoiceFromPsp(
+  invoiceId: string
+): Promise<PspInvoice | null> {
+  if (!PSP_API_URL) return null;
+
+  try {
+    const res = await fetch(
+      `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as PspInvoice;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ✅ Client component (uses useSearchParams) MUST be inside Suspense.
+ * We keep the page itself as a Server Component to satisfy Next build.
+ */
+function SuccessClient() {
+  "use client";
+
+  // IMPORTANT: this hook is the reason for Suspense boundary requirement
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const { useSearchParams } =
+    require("next/navigation") as typeof import("next/navigation");
   const sp = useSearchParams();
-  const invoiceId = sp.get("invoiceId")?.trim() || "";
+  const invoiceId = sp?.get("invoiceId") ?? "";
 
-  const [invoice, setInvoice] = useState<PspInvoice | null>(null);
-  const [loading, setLoading] = useState(Boolean(invoiceId));
-  const [hint, setHint] = useState<string | null>(null);
+  // We render the full UI via server data fetch in a nested server component
+  // by navigating to the same route with proper query.
+  // But we can also just render a link and let server side handle it.
+  // Here: we just render a tiny “loader shell” and server component will do the real work.
+  return <SuccessServer invoiceId={invoiceId} />;
+}
 
-  const stopRef = useRef(false);
+/**
+ * Server component that does the fetch and renders the page.
+ */
+async function SuccessServer({ invoiceId }: { invoiceId: string }) {
+  const pspInvoice = invoiceId ? await fetchInvoiceFromPsp(invoiceId) : null;
 
-  const ui = useMemo(() => statusUi(invoice?.status), [invoice?.status]);
-
-  // polling
-  useEffect(() => {
-    stopRef.current = false;
-
-    if (!invoiceId) {
-      setLoading(false);
-      setHint("Tip: open this page as /open/pay/success?invoiceId=...");
-      return;
-    }
-
-    if (!PSP_API_URL) {
-      setLoading(false);
-      setHint("NEXT_PUBLIC_API_URL is not set on Vercel.");
-      return;
-    }
-
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-
-    const tick = async () => {
-      if (stopRef.current) return;
-
-      try {
-        const res = await fetch(
-          `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`,
-          { cache: "no-store" }
-        );
-
-        if (res.ok) {
-          const data = (await res.json()) as PspInvoice;
-          if (data?.id) {
-            setInvoice(data);
-            setHint(null);
-          }
-        } else {
-          // не спамим красным — просто оставим подсказку
-          setHint("Provider data is not available yet.");
-        }
-      } catch {
-        setHint("Provider is temporarily unavailable.");
-      } finally {
-        setLoading(false);
+  const invoice: InvoiceData | null = pspInvoice
+    ? {
+        invoiceId: pspInvoice.id,
+        fiatAmount: Number(pspInvoice.fiatAmount),
+        fiatCurrency: pspInvoice.fiatCurrency,
+        cryptoAmount: Number(pspInvoice.cryptoAmount),
+        cryptoCurrency: pspInvoice.cryptoCurrency,
+        status: pspInvoice.status,
+        expiresAt: pspInvoice.expiresAt,
+        paymentUrl: pspInvoice.paymentUrl,
       }
+    : null;
 
-      // останавливаем polling только когда:
-      // 1) статус финальный И 2) есть txHash или txStatus уже не pending
-      const s = invoice?.status;
-      const txReady =
-        Boolean(invoice?.txHash) ||
-        (invoice?.txStatus && invoice?.txStatus !== "pending");
-
-      if (isFinalStatus(s) && txReady) return;
-
-      timeout = setTimeout(tick, POLL_MS);
-    };
-
-    void tick();
-
-    return () => {
-      stopRef.current = true;
-      if (timeout) clearTimeout(timeout);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoiceId]);
+  const ui = statusUi(pspInvoice?.status);
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -190,12 +155,6 @@ export default function CryptoPaySuccessPage() {
           <p className="mt-2 max-w-sm mx-auto text-xs text-slate-500">
             {ui.subtitle}
           </p>
-
-          {loading ? (
-            <p className="mt-2 text-[11px] text-slate-400">
-              Loading provider data…
-            </p>
-          ) : null}
         </header>
 
         {/* Summary card */}
@@ -237,33 +196,38 @@ export default function CryptoPaySuccessPage() {
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Network</span>
-            <span className="text-slate-900">{invoice?.network ?? "—"}</span>
+            <span className="text-slate-900">{pspInvoice?.network ?? "—"}</span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Tx hash</span>
             <span className="font-mono text-[11px] text-slate-900 truncate max-w-[60%]">
-              {invoice?.txHash ?? "—"}
+              {pspInvoice?.txHash ?? "—"}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Wallet</span>
             <span className="font-mono text-[11px] text-slate-900 truncate max-w-[60%]">
-              {invoice?.walletAddress ?? "—"}
+              {pspInvoice?.walletAddress ?? "—"}
             </span>
           </div>
 
-          {hint ? (
+          {!invoiceId && (
             <p className="pt-1 text-[11px] text-slate-400">
-              {hint}{" "}
-              {PSP_API_URL ? (
-                <>
-                  (API: <span className="font-mono">{PSP_API_URL}</span>)
-                </>
-              ) : null}
+              Tip: open this page as{" "}
+              <span className="font-mono">/open/pay/success?invoiceId=...</span>
             </p>
-          ) : null}
+          )}
+
+          {invoiceId && !invoice && (
+            <p className="pt-1 text-[11px] text-slate-400">
+              Provider data is not available yet. Make sure{" "}
+              <span className="font-mono">PSP_API_URL</span> (preferred) or{" "}
+              <span className="font-mono">NEXT_PUBLIC_API_URL</span> points to
+              PSP-core.
+            </p>
+          )}
         </section>
 
         {/* CTA */}
@@ -277,5 +241,25 @@ export default function CryptoPaySuccessPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function CryptoPaySuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-slate-50">
+          <div className="max-w-xl mx-auto px-4 py-10 lg:py-12">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-700">
+                Loading payment status…
+              </div>
+            </div>
+          </div>
+        </main>
+      }
+    >
+      <SuccessClient />
+    </Suspense>
   );
 }
