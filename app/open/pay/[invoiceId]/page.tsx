@@ -24,16 +24,23 @@ function getDemoExpiresAt(): string {
   return new Date(Date.now() + 25 * 60 * 1000).toISOString();
 }
 
-function getBaseUrl(): string {
+/**
+ * Robust base URL for server-side fetch to our own Next API routes.
+ * Priority:
+ *  1) NEXT_PUBLIC_SITE_URL (explicit)
+ *  2) VERCEL_URL (on Vercel)
+ *  3) headers() (runtime)
+ *  4) localhost fallback in dev
+ */
+async function getBaseUrl(): Promise<string> {
   const envBase =
     process.env.NEXT_PUBLIC_SITE_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
 
   if (envBase) return envBase.replace(/\/+$/, "");
 
-  // Runtime headers fallback (NO await here)
   try {
-    const h = headers();
+    const h = await headers(); // ✅ Next.js 15: headers() is async
     const host = h.get("x-forwarded-host") || h.get("host");
     const proto = h.get("x-forwarded-proto") || "http";
     if (host) return `${proto}://${host}`.replace(/\/+$/, "");
@@ -41,9 +48,7 @@ function getBaseUrl(): string {
     // ignore
   }
 
-  // Dev fallback
   if (process.env.NODE_ENV !== "production") return "http://localhost:3000";
-
   return "";
 }
 
@@ -54,7 +59,7 @@ async function fetchInvoiceFromNextApi(
   invoiceId: string
 ): Promise<InvoiceData | null> {
   try {
-    const baseUrl = getBaseUrl();
+    const baseUrl = await getBaseUrl();
     if (!baseUrl) return null;
 
     const url = `${baseUrl}/api/payments/status?invoiceId=${encodeURIComponent(
@@ -67,7 +72,6 @@ async function fetchInvoiceFromNextApi(
     const snap = (await res.json()) as any;
     if (!snap?.ok) return null;
 
-    // If backend later wraps payload as { invoice: {...} }
     const src = snap.invoice ?? snap;
 
     const invoice: InvoiceData = {
