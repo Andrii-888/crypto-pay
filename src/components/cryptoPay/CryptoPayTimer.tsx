@@ -1,66 +1,65 @@
 // src/components/cryptoPay/CryptoPayTimer.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-type CryptoPayTimerProps = {
-  expiresAt: string; // ISO-строка с сервера
+type Props = {
+  expiresAt?: string | null;
 };
 
-function getRemainingSeconds(expiresAt: string): number {
-  const target = new Date(expiresAt);
-  const diff = target.getTime() - Date.now();
-  return Math.max(0, Math.floor(diff / 1000));
+function formatMMSS(totalSeconds: number) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const min = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
-export function CryptoPayTimer({ expiresAt }: CryptoPayTimerProps) {
-  const [initialSeconds] = useState(() => getRemainingSeconds(expiresAt));
-  const [remaining, setRemaining] = useState(initialSeconds);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setRemaining(getRemainingSeconds(expiresAt));
-    }, 1000);
-
-    return () => clearInterval(id);
+export function CryptoPayTimer({ expiresAt }: Props) {
+  const expiryMs = useMemo(() => {
+    if (!expiresAt) return null;
+    const ms = Date.parse(expiresAt);
+    return Number.isNaN(ms) ? null : ms;
   }, [expiresAt]);
 
-  const minutes = Math.floor(remaining / 60);
-  const seconds = remaining % 60;
-  const timeLabel =
-    remaining > 0
-      ? `${minutes}:${seconds.toString().padStart(2, "0")}`
-      : "Expired";
+  const [mounted, setMounted] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
-  const progressPercent =
-    initialSeconds > 0 ? Math.max(0, (remaining / initialSeconds) * 100) : 0;
+  // 1) ensure SSR + first client render match (always "—")
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const isActive = remaining > 0;
+  // 2) start ticking only after mount
+  useEffect(() => {
+    if (!mounted) return;
+    if (!expiryMs) {
+      setSecondsLeft(null);
+      return;
+    }
+
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((expiryMs - Date.now()) / 1000));
+      setSecondsLeft(diff);
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [mounted, expiryMs]);
+
+  const label = mounted && secondsLeft !== null ? formatMMSS(secondsLeft) : "—";
 
   return (
-    <div className="space-y-1 mt-1">
-      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-[11px]">
-        <div className="flex items-center gap-2">
-          <span
-            className={`h-2 w-2 rounded-full ${
-              isActive ? "bg-amber-400" : "bg-red-400"
-            }`}
-          />
-          <span className="font-medium text-slate-700">
-            {isActive ? "Quote expires in" : "Quote expired"}
-          </span>
-        </div>
-        <span className="font-mono text-slate-900">{timeLabel}</span>
-      </div>
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-slate-900">
+          Quote expires in
+        </span>
 
-      {isActive && (
-        <div className="h-1 rounded-full bg-slate-200 overflow-hidden">
-          <div
-            className="h-full bg-slate-900 transition-[width] duration-500"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-      )}
-    </div>
+        <span className="font-mono text-slate-900" suppressHydrationWarning>
+          {label}
+        </span>
+      </div>
+    </section>
   );
 }

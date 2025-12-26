@@ -1,6 +1,7 @@
 // src/components/cryptoPay/CryptoPayStatusWithPolling.tsx
 "use client";
 
+import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CryptoPayStatusBadge } from "./CryptoPayStatusBadge";
@@ -13,7 +14,6 @@ type Props = {
   initialStatus: InvoiceStatus;
   expiresAt?: string | null;
 
-  // Parent passes setInvoice, so we must accept functional updates
   onInvoiceUpdate?: React.Dispatch<React.SetStateAction<InvoiceData>>;
 };
 
@@ -39,7 +39,6 @@ function isExpiredByTime(expiresAt?: string | null) {
 
 type StatusApiOk = {
   ok: true;
-  // backend can return a lot of fields — we accept anything and merge safely
   [key: string]: any;
 };
 
@@ -47,12 +46,7 @@ type StatusApiResponse =
   | StatusApiOk
   | { ok: false; error?: string; details?: string };
 
-/**
- * Merge API snapshot into InvoiceData, NEVER wiping existing fields with null/undefined.
- * This is the key to "no flicker" and stable UI.
- */
 function mergeSnapshot(prev: InvoiceData, snap: StatusApiOk): InvoiceData {
-  // In case backend later wraps payload as { invoice: {...} }
   const src = (snap as any).invoice ?? snap;
 
   const next: InvoiceData = { ...prev };
@@ -63,21 +57,21 @@ function mergeSnapshot(prev: InvoiceData, snap: StatusApiOk): InvoiceData {
     }
   };
 
-  // Always keep invoiceId consistent
   setIfDefined("invoiceId", src.invoiceId ?? src.id);
 
-  // Status / expiry
   setIfDefined("status", normalizeStatus(src.status) as InvoiceData["status"]);
   setIfDefined("expiresAt", src.expiresAt);
 
-  // Amounts / currencies
+  setIfDefined("createdAt", src.createdAt);
+  setIfDefined("detectedAt", src.detectedAt);
+  setIfDefined("confirmedAt", src.confirmedAt);
+
   setIfDefined("fiatAmount", src.fiatAmount);
   setIfDefined("fiatCurrency", src.fiatCurrency);
   setIfDefined("cryptoAmount", src.cryptoAmount);
   setIfDefined("cryptoCurrency", src.cryptoCurrency);
   setIfDefined("network", src.network);
 
-  // Fees / FX
   setIfDefined("grossAmount", src.grossAmount);
   setIfDefined("feeAmount", src.feeAmount);
   setIfDefined("netAmount", src.netAmount);
@@ -87,25 +81,16 @@ function mergeSnapshot(prev: InvoiceData, snap: StatusApiOk): InvoiceData {
   setIfDefined("fxRate", src.fxRate);
   setIfDefined("fxPair", src.fxPair);
 
-  // TX snapshot (never overwrite with null/undefined)
+  // tx: не затираем null/undefined
   setIfDefined("txStatus", src.txStatus ?? prev.txStatus ?? "pending");
   setIfDefined("txHash", src.txHash);
   setIfDefined("walletAddress", src.walletAddress);
 
-  if (typeof src.confirmations === "number") {
+  if (typeof src.confirmations === "number")
     next.confirmations = src.confirmations;
-  }
-
-  if (typeof src.requiredConfirmations === "number") {
+  if (typeof src.requiredConfirmations === "number")
     next.requiredConfirmations = src.requiredConfirmations;
-  }
 
-  // Timestamps
-  setIfDefined("detectedAt", src.detectedAt);
-  setIfDefined("confirmedAt", src.confirmedAt);
-  setIfDefined("createdAt", src.createdAt);
-
-  // AML / decision
   setIfDefined("amlStatus", src.amlStatus);
   setIfDefined("riskScore", src.riskScore);
   setIfDefined("assetStatus", src.assetStatus);
@@ -117,7 +102,6 @@ function mergeSnapshot(prev: InvoiceData, snap: StatusApiOk): InvoiceData {
   setIfDefined("decidedAt", src.decidedAt);
   setIfDefined("decidedBy", src.decidedBy);
 
-  // Merchant
   setIfDefined("merchantId", src.merchantId);
 
   return next;
@@ -137,46 +121,31 @@ export function CryptoPayStatusWithPolling({
   const statusRef = useRef<InvoiceStatus>(normalizeStatus(initialStatus));
   const redirectedRef = useRef(false);
 
-  // keep badge in sync if parent updates (SSR->CSR hydration)
+  // ✅ защита от двойного запуска эффекта (Strict Mode в dev)
+  const startedRef = useRef(false);
+
   useEffect(() => {
     const s = normalizeStatus(initialStatus);
     setStatus(s);
     statusRef.current = s;
   }, [initialStatus]);
 
-  // local expiry fallback (even if API down)
   useEffect(() => {
-    if (isFinalStatus(statusRef.current)) return;
-    if (!expiresAt) return;
+    if (startedRef.current) return;
+    startedRef.current = true;
 
-    const t = Date.parse(expiresAt);
-    if (Number.isNaN(t)) return;
-
-    const ms = t - Date.now();
-    if (ms <= 0) {
-      statusRef.current = "expired";
-      setStatus("expired");
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      if (!isFinalStatus(statusRef.current)) {
-        statusRef.current = "expired";
-        setStatus("expired");
-      }
-    }, ms);
-
-    return () => clearTimeout(timer);
-  }, [expiresAt]);
-
-  // Poll via Next API (server adds x-api-key)
-  useEffect(() => {
     let cancelled = false;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const tick = async () => {
       if (cancelled) return;
-      if (!invoiceId) return;
+
+      const id = String(invoiceId ?? "").trim();
+      if (!id) {
+        timeoutId = setTimeout(tick, 2500);
+        return;
+      }
+
       if (isFinalStatus(statusRef.current)) return;
 
       if (isExpiredByTime(expiresAt)) {
@@ -187,8 +156,10 @@ export function CryptoPayStatusWithPolling({
 
       try {
         const res = await fetch(
-          `/api/payments/status?invoiceId=${encodeURIComponent(invoiceId)}`,
-          { cache: "no-store" }
+          `/api/payments/status?invoiceId=${encodeURIComponent(id)}`,
+          {
+            cache: "no-store",
+          }
         );
 
         if (res.ok) {
@@ -197,7 +168,6 @@ export function CryptoPayStatusWithPolling({
           if ((snap as any).ok) {
             const okSnap = snap as StatusApiOk;
 
-            // merge into shared invoice state (FULL payload, no wipe)
             onInvoiceUpdate?.((prev) => mergeSnapshot(prev, okSnap));
 
             const nextStatus = normalizeStatus((okSnap as any).status);
@@ -206,11 +176,10 @@ export function CryptoPayStatusWithPolling({
               setStatus(nextStatus);
             }
 
-            // redirect once when confirmed
             if (nextStatus === "confirmed" && !redirectedRef.current) {
               redirectedRef.current = true;
               router.push(
-                `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
+                `/open/pay/success?invoiceId=${encodeURIComponent(id)}`
               );
               return;
             }
@@ -219,17 +188,18 @@ export function CryptoPayStatusWithPolling({
           }
         }
       } catch {
-        // ignore transient errors
+        // ignore
       }
 
-      timeout = setTimeout(tick, 2500);
+      timeoutId = setTimeout(tick, 2500);
     };
 
     void tick();
 
     return () => {
       cancelled = true;
-      if (timeout) clearTimeout(timeout);
+      if (timeoutId) clearTimeout(timeoutId);
+      startedRef.current = false;
     };
   }, [invoiceId, expiresAt, onInvoiceUpdate, router]);
 

@@ -32,6 +32,13 @@ function toUpperSafe(v: unknown, fallback: string) {
   return typeof v === "string" && v.trim() ? v.trim().toUpperCase() : fallback;
 }
 
+function normalizeNetwork(v: unknown): "TRON" | "ETH" {
+  const n = toUpperSafe(v, "TRON");
+  if (n === "TRON" || n === "TRC20") return "TRON";
+  if (n === "ETH" || n === "ETHEREUM" || n === "ERC20") return "ETH";
+  return "TRON";
+}
+
 function getOrigin(req: NextRequest) {
   const origin = req.headers.get("origin");
   if (origin) return origin.replace(/\/+$/, "");
@@ -45,9 +52,7 @@ function getOrigin(req: NextRequest) {
 
 async function safeReadBody(res: Response): Promise<unknown> {
   const ct = res.headers.get("content-type") ?? "";
-  if (ct.includes("application/json")) {
-    return res.json().catch(() => ({}));
-  }
+  if (ct.includes("application/json")) return res.json().catch(() => ({}));
   const text = await res.text().catch(() => "");
   return text ? { message: text.slice(0, 500) } : {};
 }
@@ -59,6 +64,7 @@ export async function POST(request: NextRequest) {
   let fiatCurrency = "EUR";
   let cryptoCurrency: "USDT" | "USDC" = "USDT";
   let orderId: string | undefined;
+  let network: "TRON" | "ETH" = "TRON";
 
   try {
     const body = (await request.json().catch(() => ({}))) as JsonObject;
@@ -78,6 +84,9 @@ export async function POST(request: NextRequest) {
     cryptoCurrency = token === "USDC" ? "USDC" : "USDT";
 
     orderId = extractField<string>(body, ["orderId", "description"], undefined);
+
+    // ✅ NEW: network from client
+    network = normalizeNetwork(extractField(body, ["network"], "TRON"));
   } catch {
     // ignore
   }
@@ -88,8 +97,6 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: "VALIDATION_ERROR",
         message: "amount must be > 0",
-
-        // ✅ DIAG
         pspApiUrl: PSP_API_URL,
         hasPspKey: Boolean(PSP_API_KEY),
       },
@@ -103,8 +110,6 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: "CONFIG_ERROR",
         message: "PSP_API_URL is empty",
-
-        // ✅ DIAG
         pspApiUrl: PSP_API_URL,
         hasPspKey: Boolean(PSP_API_KEY),
       },
@@ -118,8 +123,6 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: "CONFIG_ERROR",
         message: "PSP_API_KEY is empty (set PSP_API_KEY in env and redeploy)",
-
-        // ✅ DIAG
         pspApiUrl: PSP_API_URL,
         hasPspKey: Boolean(PSP_API_KEY),
       },
@@ -133,7 +136,7 @@ export async function POST(request: NextRequest) {
       cache: "no-store",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${PSP_API_KEY}`,
+        "x-api-key": PSP_API_KEY, // ✅ psp-core uses x-api-key
       },
       body: JSON.stringify({
         merchantId: "mrc_test_001",
@@ -141,7 +144,7 @@ export async function POST(request: NextRequest) {
         fiatAmount: amount,
         fiatCurrency,
         cryptoCurrency,
-        network: "TRON",
+        network, // ✅ TRON / ETH
         expiresInMinutes: 10,
       }),
     });
@@ -161,8 +164,6 @@ export async function POST(request: NextRequest) {
           message: msg,
           backendStatus,
           backendData: data,
-
-          // ✅ DIAG (самое важное!)
           pspApiUrl: PSP_API_URL,
           hasPspKey: Boolean(PSP_API_KEY),
         },
@@ -182,8 +183,6 @@ export async function POST(request: NextRequest) {
           message: "PSP did not return invoice id",
           backendStatus,
           backendData: data,
-
-          // ✅ DIAG
           pspApiUrl: PSP_API_URL,
           hasPspKey: Boolean(PSP_API_KEY),
         },
@@ -204,6 +203,7 @@ export async function POST(request: NextRequest) {
         ok: true,
         invoiceId,
         paymentUrl,
+        network, // ✅ return network so you can verify instantly
 
         amount:
           extractField<number>(data, ["fiatAmount", "fiat_amount"], amount) ??
@@ -231,8 +231,6 @@ export async function POST(request: NextRequest) {
           extractField<string>(data, ["expiresAt", "expires_at"]) ?? undefined,
 
         backendStatus,
-
-        // ✅ DIAG
         pspApiUrl: PSP_API_URL,
         hasPspKey: Boolean(PSP_API_KEY),
       },
@@ -244,8 +242,6 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: "NETWORK_ERROR",
         message: err instanceof Error ? err.message : "Unknown fetch error",
-
-        // ✅ DIAG
         pspApiUrl: PSP_API_URL,
         hasPspKey: Boolean(PSP_API_KEY),
       },

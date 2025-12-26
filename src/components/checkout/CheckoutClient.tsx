@@ -18,6 +18,7 @@ type InvoiceResponse = {
   status?: string;
   expiresAt?: string;
   paymentUrl?: string;
+  network?: string;
 
   // error shape from /api/payments/create on failure
   error?: string;
@@ -31,6 +32,14 @@ function extractString(obj: unknown, key: string): string | null {
   return typeof v === "string" && v.trim() ? v : null;
 }
 
+const defaultNetworkForToken = (t: "USDT" | "USDC"): "TRON" | "ETH" =>
+  t === "USDT" ? "TRON" : "ETH";
+
+const buttonLabel = (n: "TRON" | "ETH") =>
+  n === "TRON"
+    ? "Continue to Crypto Pay (TRON)"
+    : "Continue to Crypto Pay (ETH)";
+
 export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
   const router = useRouter();
 
@@ -39,9 +48,17 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
   );
 
   const [token, setToken] = useState<"USDT" | "USDC">("USDT");
+  const [network, setNetwork] = useState<"TRON" | "ETH">(
+    defaultNetworkForToken("USDT")
+  );
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function handleTokenChange(next: "USDT" | "USDC") {
+    setToken(next);
+    setNetwork(defaultNetworkForToken(next)); // auto-pair token -> network
+  }
 
   async function handleCreateInvoice() {
     if (!amount || amount <= 0) {
@@ -60,6 +77,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
           amount,
           fiatCurrency: "EUR",
           cryptoCurrency: token,
+          network, // ✅ IMPORTANT: send network to backend
         }),
       });
 
@@ -77,7 +95,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
           `Failed to create invoice (HTTP ${res.status})`;
 
         setError(msg);
-        return; // ✅ ВАЖНО: не throw, иначе dev overlay
+        return; // ✅ don't throw (avoid dev overlay)
       }
 
       const paymentUrl = data?.paymentUrl;
@@ -160,13 +178,14 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
               </p>
             </div>
 
+            {/* Token */}
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-500">Stablecoin</span>
 
               <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px]">
                 <button
                   type="button"
-                  onClick={() => setToken("USDT")}
+                  onClick={() => handleTokenChange("USDT")}
                   className={`px-3 py-1.5 rounded-full transition ${
                     token === "USDT"
                       ? "bg-white shadow-sm text-slate-900"
@@ -177,7 +196,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setToken("USDC")}
+                  onClick={() => handleTokenChange("USDC")}
                   className={`px-3 py-1.5 rounded-full transition ${
                     token === "USDC"
                       ? "bg-white shadow-sm text-slate-900"
@@ -185,6 +204,39 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
                   }`}
                 >
                   USDC
+                </button>
+              </div>
+            </div>
+
+            {/* Network (paired to token) */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500">Network</span>
+
+              <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setNetwork("TRON")}
+                  disabled={token === "USDC"}
+                  className={`px-3 py-1.5 rounded-full transition ${
+                    network === "TRON"
+                      ? "bg-white shadow-sm text-slate-900"
+                      : "text-slate-500"
+                  } ${token === "USDC" ? "opacity-40 cursor-not-allowed" : ""}`}
+                >
+                  TRON (TRC20)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNetwork("ETH")}
+                  disabled={token === "USDT"}
+                  className={`px-3 py-1.5 rounded-full transition ${
+                    network === "ETH"
+                      ? "bg-white shadow-sm text-slate-900"
+                      : "text-slate-500"
+                  } ${token === "USDT" ? "opacity-40 cursor-not-allowed" : ""}`}
+                >
+                  Ethereum (ERC20)
                 </button>
               </div>
             </div>
@@ -222,8 +274,9 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
               disabled={loading || amount <= 0}
               className="inline-flex items-center justify-center rounded-full bg-black text-white px-4 py-2.5 text-sm font-medium hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed transition"
             >
-              {loading ? "Creating invoice..." : "Continue to Crypto Pay"}
+              {loading ? "Creating invoice..." : buttonLabel(network)}
             </button>
+
             <p className="text-[11px] text-center text-slate-400 leading-relaxed">
               By clicking continue, a demo invoice will be created and you will
               be redirected to a Crypto Pay payment page. No real payment will

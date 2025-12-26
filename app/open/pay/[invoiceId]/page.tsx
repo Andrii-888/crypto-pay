@@ -1,229 +1,249 @@
 // app/open/pay/[invoiceId]/page.tsx
-import Link from "next/link";
 import { headers } from "next/headers";
+import type { Metadata } from "next";
 import { CryptoPayPaymentClient } from "@/components/cryptoPay/CryptoPayPaymentClient";
 import type { InvoiceData } from "@/lib/invoiceStore";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  params: { invoiceId: string };
-  searchParams?: {
-    amount?: string | string[];
-    fiat?: string | string[];
-    crypto?: string | string[];
-  };
+  params: Promise<{ invoiceId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function normalizeParam(value?: string | string[]): string | undefined {
-  if (!value) return undefined;
-  return Array.isArray(value) ? value[0] : value;
-}
+type StatusApiOk = {
+  ok: true;
+  invoiceId: string;
+  status: "waiting" | "confirmed" | "expired" | "rejected";
 
-function getDemoExpiresAt(): string {
-  return new Date(Date.now() + 25 * 60 * 1000).toISOString();
-}
+  createdAt?: string | null;
+  expiresAt?: string | null;
 
-/**
- * Robust base URL for server-side fetch to our own Next API routes.
- * Priority:
- *  1) NEXT_PUBLIC_SITE_URL (explicit)
- *  2) VERCEL_URL (on Vercel)
- *  3) headers() (runtime)
- *  4) localhost fallback in dev
- */
-async function getBaseUrl(): Promise<string> {
-  const envBase =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+  fiatAmount?: number | null;
+  fiatCurrency?: string | null;
 
-  if (envBase) return envBase.replace(/\/+$/, "");
+  cryptoAmount?: number | null;
+  cryptoCurrency?: string | null;
 
+  network?: string | null;
+
+  grossAmount?: number | null;
+  feeAmount?: number | null;
+  netAmount?: number | null;
+  feeBps?: number | null;
+  feePayer?: string | null;
+
+  fxRate?: number | null;
+  fxPair?: string | null;
+
+  txStatus?: string | null;
+  txHash?: string | null;
+  walletAddress?: string | null;
+  confirmations?: number | null;
+  requiredConfirmations?: number | null;
+
+  detectedAt?: string | null;
+  confirmedAt?: string | null;
+
+  amlStatus?: string | null;
+  riskScore?: number | null;
+  assetStatus?: string | null;
+  assetRiskScore?: number | null;
+
+  decisionStatus?: string | null;
+  decisionReasonCode?: string | null;
+  decisionReasonText?: string | null;
+  decidedAt?: string | null;
+  decidedBy?: string | null;
+
+  merchantId?: string | null;
+  paymentUrl?: string | null;
+
+  // allow extra fields
+  [key: string]: any;
+};
+
+type StatusApiErr = { ok: false; error?: string; details?: string };
+type StatusApiResponse = StatusApiOk | StatusApiErr;
+
+async function getBaseUrl() {
+  // Prefer explicit env for SSR (Vercel safe)
+  const envUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+
+  // Fallback from request headers
   try {
-    const h = await headers(); // ✅ Next.js 15: headers() is async
+    const h = await headers();
     const host = h.get("x-forwarded-host") || h.get("host");
-    const proto = h.get("x-forwarded-proto") || "http";
+    const proto = h.get("x-forwarded-proto") || "https";
     if (host) return `${proto}://${host}`.replace(/\/+$/, "");
   } catch {
     // ignore
   }
 
-  if (process.env.NODE_ENV !== "production") return "http://localhost:3000";
-  return "";
+  // Last fallback
+  return "http://localhost:3000";
 }
 
-/**
- * SSR: load initial invoice snapshot via our Next API route
- */
-async function fetchInvoiceFromNextApi(
+function normalizeParam(v: string | string[] | undefined) {
+  if (!v) return "";
+  return Array.isArray(v) ? String(v[0] ?? "") : String(v);
+}
+
+async function fetchInvoiceSnapshot(
   invoiceId: string
-): Promise<InvoiceData | null> {
-  try {
-    const baseUrl = await getBaseUrl();
-    if (!baseUrl) return null;
+): Promise<StatusApiOk | null> {
+  if (!invoiceId) return null;
 
-    const url = `${baseUrl}/api/payments/status?invoiceId=${encodeURIComponent(
-      invoiceId
-    )}`;
+  const baseUrl = await getBaseUrl();
+  const url = `${baseUrl}/api/payments/status?invoiceId=${encodeURIComponent(
+    invoiceId
+  )}`;
 
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return null;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) return null;
 
-    const snap = (await res.json()) as any;
-    if (!snap?.ok) return null;
+  const data = (await res.json().catch(() => null)) as StatusApiResponse | null;
+  if (!data || (data as any).ok !== true) return null;
 
-    const src = snap.invoice ?? snap;
+  return data as StatusApiOk;
+}
 
-    const invoice: InvoiceData = {
-      invoiceId: src.invoiceId ?? invoiceId,
-      createdAt: src.createdAt ?? null,
-      expiresAt: src.expiresAt ?? null,
-
-      fiatAmount: typeof src.fiatAmount === "number" ? src.fiatAmount : 0,
-      fiatCurrency: src.fiatCurrency ?? "CHF",
-      cryptoAmount: typeof src.cryptoAmount === "number" ? src.cryptoAmount : 0,
-      cryptoCurrency: src.cryptoCurrency ?? "USDT",
-
-      status: (src.status ?? "waiting") as InvoiceData["status"],
-      paymentUrl: `/open/pay/${invoiceId}`,
-
-      grossAmount: src.grossAmount ?? null,
-      feeAmount: src.feeAmount ?? null,
-      netAmount: src.netAmount ?? null,
-      feeBps: src.feeBps ?? null,
-      feePayer: src.feePayer ?? null,
-
-      fxRate: src.fxRate ?? null,
-      fxPair: src.fxPair ?? null,
-
-      network: src.network ?? null,
-
-      txHash: src.txHash ?? null,
-      walletAddress: src.walletAddress ?? null,
-      txStatus: src.txStatus ?? "pending",
-      confirmations:
-        typeof src.confirmations === "number" ? src.confirmations : 0,
-      requiredConfirmations:
-        typeof src.requiredConfirmations === "number"
-          ? src.requiredConfirmations
-          : null,
-
-      detectedAt: src.detectedAt ?? null,
-      confirmedAt: src.confirmedAt ?? null,
-
-      riskScore: src.riskScore ?? null,
-      amlStatus: src.amlStatus ?? null,
-      assetRiskScore: src.assetRiskScore ?? null,
-      assetStatus: src.assetStatus ?? null,
-
-      merchantId: src.merchantId ?? null,
-
-      decisionStatus: src.decisionStatus ?? "none",
-      decisionReasonCode: src.decisionReasonCode ?? null,
-      decisionReasonText: src.decisionReasonText ?? null,
-      decidedAt: src.decidedAt ?? null,
-      decidedBy: src.decidedBy ?? null,
-    };
-
-    return invoice;
-  } catch {
-    return null;
-  }
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
+  const p = await params;
+  const invoiceId = String(p?.invoiceId ?? "").trim();
+  return {
+    title: invoiceId ? `Crypto Pay • ${invoiceId}` : "Crypto Pay",
+  };
 }
 
 export default async function PaymentPage({ params, searchParams }: PageProps) {
-  const { invoiceId } = params;
+  const p = await params;
+  const sp = await searchParams;
 
-  let finalInvoice: InvoiceData | null = await fetchInvoiceFromNextApi(
-    invoiceId
-  );
+  const invoiceId = String(p?.invoiceId ?? "").trim();
 
-  const isDev = process.env.NODE_ENV !== "production";
+  // DEV fallback (only if invoiceId empty)
+  const devInvoiceId = normalizeParam(sp.invoiceId);
+  const finalInvoiceId = invoiceId || devInvoiceId;
 
-  // DEV-only demo fallback for UI testing without backend
-  if (!finalInvoice && isDev) {
-    const sp = searchParams ?? {};
-    const rawAmount = normalizeParam(sp.amount);
-    const rawFiat = normalizeParam(sp.fiat);
-    const rawCrypto = normalizeParam(sp.crypto);
-
-    const parsedAmount = rawAmount ? Number(rawAmount) : 0;
-
-    if (parsedAmount > 0 && rawFiat) {
-      finalInvoice = {
-        invoiceId,
-        fiatAmount: parsedAmount,
-        fiatCurrency: rawFiat,
-        cryptoCurrency: (rawCrypto || "USDT").toUpperCase(),
-        cryptoAmount: parsedAmount, // demo UI only
-        status: "waiting",
-        expiresAt: getDemoExpiresAt(),
-        paymentUrl: `/open/pay/${invoiceId}`,
-
-        createdAt: null,
-        grossAmount: null,
-        feeAmount: null,
-        netAmount: null,
-        feeBps: null,
-        feePayer: null,
-        fxRate: null,
-        fxPair: null,
-        network: null,
-        txHash: null,
-        walletAddress: null,
-        txStatus: "pending",
-        confirmations: 0,
-        requiredConfirmations: null,
-        detectedAt: null,
-        confirmedAt: null,
-        riskScore: null,
-        amlStatus: null,
-        assetRiskScore: null,
-        assetStatus: null,
-        merchantId: null,
-        decisionStatus: "none",
-        decisionReasonCode: null,
-        decisionReasonText: null,
-        decidedAt: null,
-        decidedBy: null,
-      };
-    }
-  }
-
-  if (!finalInvoice) {
+  if (!finalInvoiceId) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-        <div className="max-w-md w-full text-center space-y-3">
-          <h1 className="text-xl font-semibold text-slate-900">
-            Invoice not found
-          </h1>
-          <p className="text-sm text-slate-500">
-            The payment link is invalid or expired. Please go back to the store
-            and create a new payment.
-          </p>
+      <main className="min-h-screen bg-slate-50">
+        <div className="max-w-xl mx-auto px-4 py-10">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+            <div className="text-sm font-semibold text-slate-900">
+              Invoice not found
+            </div>
+            <div className="mt-1 text-xs text-slate-600">
+              The payment link is invalid. Please go back to the store and
+              create a new payment.
+            </div>
+          </div>
         </div>
       </main>
     );
   }
 
-  const checkoutHref = `/checkout?amount=${encodeURIComponent(
-    Number(finalInvoice.fiatAmount || 0).toFixed(2)
-  )}`;
+  // ✅ SSR fetch ONLY through our Next API (it adds API key server-side)
+  const snap = await fetchInvoiceSnapshot(finalInvoiceId);
+
+  if (!snap) {
+    return (
+      <main className="min-h-screen bg-slate-50">
+        <div className="max-w-xl mx-auto px-4 py-10">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 shadow-sm p-5">
+            <div className="text-sm font-semibold text-rose-900">
+              Invoice not found
+            </div>
+            <div className="mt-1 text-xs text-rose-800">
+              The payment link is invalid or expired. Please go back to the
+              store and create a new payment.
+            </div>
+            <div className="mt-2 text-[11px] text-rose-700 font-mono break-all">
+              invoiceId: {finalInvoiceId}
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // Map snapshot -> InvoiceData for client UI
+  const initialInvoice = {
+    invoiceId: snap.invoiceId ?? finalInvoiceId,
+    status: snap.status ?? "waiting",
+    ...(snap.createdAt ? { createdAt: snap.createdAt } : {}),
+    ...(snap.expiresAt ? { expiresAt: snap.expiresAt } : {}),
+
+    ...(typeof snap.fiatAmount === "number"
+      ? { fiatAmount: snap.fiatAmount }
+      : {}),
+    ...(snap.fiatCurrency ? { fiatCurrency: snap.fiatCurrency } : {}),
+
+    ...(typeof snap.cryptoAmount === "number"
+      ? { cryptoAmount: snap.cryptoAmount }
+      : {}),
+    ...(snap.cryptoCurrency ? { cryptoCurrency: snap.cryptoCurrency } : {}),
+
+    ...(snap.network ? { network: snap.network } : {}),
+
+    ...(typeof snap.grossAmount === "number"
+      ? { grossAmount: snap.grossAmount }
+      : {}),
+    ...(typeof snap.feeAmount === "number"
+      ? { feeAmount: snap.feeAmount }
+      : {}),
+    ...(typeof snap.netAmount === "number"
+      ? { netAmount: snap.netAmount }
+      : {}),
+    ...(typeof snap.feeBps === "number" ? { feeBps: snap.feeBps } : {}),
+    ...(snap.feePayer ? { feePayer: snap.feePayer } : {}),
+
+    ...(typeof snap.fxRate === "number" ? { fxRate: snap.fxRate } : {}),
+    ...(snap.fxPair ? { fxPair: snap.fxPair } : {}),
+
+    txStatus: (snap.txStatus ?? "pending") as any,
+    ...(snap.txHash ? { txHash: snap.txHash } : {}),
+    ...(snap.walletAddress ? { walletAddress: snap.walletAddress } : {}),
+    ...(typeof snap.confirmations === "number"
+      ? { confirmations: snap.confirmations }
+      : {}),
+    ...(typeof snap.requiredConfirmations === "number"
+      ? { requiredConfirmations: snap.requiredConfirmations }
+      : {}),
+
+    ...(snap.detectedAt ? { detectedAt: snap.detectedAt } : {}),
+    ...(snap.confirmedAt ? { confirmedAt: snap.confirmedAt } : {}),
+
+    // ⚠️ Эти поля добавляй ТОЛЬКО если они реально есть в InvoiceData.
+    // Если TS ругается — просто УДАЛИ эти строки (значит их нет в типе).
+    ...(snap.amlStatus ? { amlStatus: snap.amlStatus } : {}),
+    ...(typeof snap.riskScore === "number"
+      ? { riskScore: snap.riskScore }
+      : {}),
+    ...(snap.assetStatus ? { assetStatus: snap.assetStatus } : {}),
+    ...(typeof snap.assetRiskScore === "number"
+      ? { assetRiskScore: snap.assetRiskScore }
+      : {}),
+
+    ...(snap.decisionStatus ? { decisionStatus: snap.decisionStatus } : {}),
+    ...(snap.decisionReasonCode
+      ? { decisionReasonCode: snap.decisionReasonCode }
+      : {}),
+    ...(snap.decisionReasonText
+      ? { decisionReasonText: snap.decisionReasonText }
+      : {}),
+    ...(snap.decidedAt ? { decidedAt: snap.decidedAt } : {}),
+    ...(snap.decidedBy ? { decidedBy: snap.decidedBy } : {}),
+  } as InvoiceData;
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="max-w-xl mx-auto px-4 py-8 lg:py-10">
-        <div className="mb-3">
-          <Link
-            href={checkoutHref}
-            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition"
-          >
-            <span className="text-sm">←</span>
-            <span>Back to checkout</span>
-          </Link>
-        </div>
-
-        <CryptoPayPaymentClient initialInvoice={finalInvoice} />
+      <div className="max-w-xl mx-auto px-4 py-10 lg:py-12">
+        <CryptoPayPaymentClient initialInvoice={initialInvoice} />
       </div>
     </main>
   );
