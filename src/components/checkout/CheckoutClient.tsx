@@ -98,13 +98,14 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
         return; // ✅ don't throw (avoid dev overlay)
       }
 
-      const paymentUrl = data?.paymentUrl;
-      if (!paymentUrl) {
-        setError("Payment URL is missing in invoice response.");
+      const invoiceId = data?.invoiceId;
+      if (!invoiceId) {
+        setError("Invoice ID is missing in invoice response.");
         return;
       }
 
-      router.push(paymentUrl);
+      // ✅ Correct rule: always redirect by invoiceId to our internal route
+      router.push(`/open/pay/${encodeURIComponent(invoiceId)}`);
     } catch (err: unknown) {
       setError(
         err instanceof Error

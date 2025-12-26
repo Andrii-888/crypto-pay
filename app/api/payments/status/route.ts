@@ -3,12 +3,7 @@ import { NextResponse } from "next/server";
 
 const BUILD_STAMP = "status-route-v2-2025-12-25-__A1";
 
-const PSP_API_URL = (
-  process.env.PSP_API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  ""
-).replace(/\/+$/, "");
-
+const PSP_API_URL = (process.env.PSP_API_URL ?? "").replace(/\/+$/, "");
 const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
 
 type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
@@ -22,7 +17,7 @@ type OkResponse = {
 
   // invoice core
   createdAt?: string | null;
-  expiresAt?: string | string | null;
+  expiresAt?: string | null;
   paymentUrl?: string | null;
   merchantId?: string | null;
 
@@ -120,8 +115,7 @@ export async function GET(req: Request) {
     const res: ErrResponse = {
       ok: false,
       error: "PSP_API_URL is empty",
-      details:
-        "Set PSP_API_URL (or NEXT_PUBLIC_API_URL) in .env.local and restart",
+      details: "Set PSP_API_URL in .env.local and restart",
     };
     return NextResponse.json(res, { status: 500 });
   }

@@ -4,10 +4,11 @@ import type { Metadata } from "next";
 import { CryptoPayPaymentClient } from "@/components/cryptoPay/CryptoPayPaymentClient";
 import type { InvoiceData } from "@/lib/invoiceStore";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  params: Promise<{ invoiceId: string }>;
+  params: Promise<{ invoiceId?: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
@@ -59,35 +60,28 @@ type StatusApiOk = {
   merchantId?: string | null;
   paymentUrl?: string | null;
 
-  // allow extra fields
   [key: string]: any;
 };
 
 type StatusApiErr = { ok: false; error?: string; details?: string };
 type StatusApiResponse = StatusApiOk | StatusApiErr;
 
-async function getBaseUrl() {
-  // Prefer explicit env for SSR (Vercel safe)
-  const envUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (envUrl) return envUrl.replace(/\/+$/, "");
-
-  // Fallback from request headers
-  try {
-    const h = await headers();
-    const host = h.get("x-forwarded-host") || h.get("host");
-    const proto = h.get("x-forwarded-proto") || "https";
-    if (host) return `${proto}://${host}`.replace(/\/+$/, "");
-  } catch {
-    // ignore
-  }
-
-  // Last fallback
-  return "http://localhost:3000";
-}
-
 function normalizeParam(v: string | string[] | undefined) {
   if (!v) return "";
   return Array.isArray(v) ? String(v[0] ?? "") : String(v);
+}
+
+/**
+ * ✅ Best practice for Vercel SSR:
+ * - do NOT rely on NEXT_PUBLIC_SITE_URL here (often set to localhost)
+ * - build baseUrl from forwarded headers
+ */
+async function getBaseUrlFromHeaders() {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") || h.get("host");
+  const proto = h.get("x-forwarded-proto") || "https";
+  if (!host) return "http://localhost:3000";
+  return `${proto}://${host}`.replace(/\/+$/, "");
 }
 
 async function fetchInvoiceSnapshot(
@@ -95,7 +89,7 @@ async function fetchInvoiceSnapshot(
 ): Promise<StatusApiOk | null> {
   if (!invoiceId) return null;
 
-  const baseUrl = await getBaseUrl();
+  const baseUrl = await getBaseUrlFromHeaders();
   const url = `${baseUrl}/api/payments/status?invoiceId=${encodeURIComponent(
     invoiceId
   )}`;
@@ -114,67 +108,57 @@ export async function generateMetadata({
 }: PageProps): Promise<Metadata> {
   const p = await params;
   const invoiceId = String(p?.invoiceId ?? "").trim();
-  return {
-    title: invoiceId ? `Crypto Pay • ${invoiceId}` : "Crypto Pay",
-  };
+  return { title: invoiceId ? `Crypto Pay • ${invoiceId}` : "Crypto Pay" };
+}
+
+function NotFoundUI({ invoiceId }: { invoiceId?: string }) {
+  return (
+    <main className="min-h-screen bg-slate-50">
+      <div className="max-w-xl mx-auto px-4 py-10">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 shadow-sm p-5">
+          <div className="text-sm font-semibold text-rose-900">
+            Invoice not found
+          </div>
+          <div className="mt-1 text-xs text-rose-800">
+            The payment link is invalid or expired. Please go back to the store
+            and create a new payment.
+          </div>
+          {invoiceId ? (
+            <div className="mt-2 text-[11px] text-rose-700 font-mono break-all">
+              invoiceId: {invoiceId}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </main>
+  );
 }
 
 export default async function PaymentPage({ params, searchParams }: PageProps) {
   const p = await params;
   const sp = await searchParams;
 
-  const invoiceId = String(p?.invoiceId ?? "").trim();
+  const invoiceIdFromPath = String(p?.invoiceId ?? "").trim();
+  const invoiceIdFromQuery = normalizeParam(sp.invoiceId).trim();
 
-  // DEV fallback (only if invoiceId empty)
-  const devInvoiceId = normalizeParam(sp.invoiceId);
-  const finalInvoiceId = invoiceId || devInvoiceId;
+  const finalInvoiceId = invoiceIdFromPath || invoiceIdFromQuery;
 
   if (!finalInvoiceId) {
-    return (
-      <main className="min-h-screen bg-slate-50">
-        <div className="max-w-xl mx-auto px-4 py-10">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
-            <div className="text-sm font-semibold text-slate-900">
-              Invoice not found
-            </div>
-            <div className="mt-1 text-xs text-slate-600">
-              The payment link is invalid. Please go back to the store and
-              create a new payment.
-            </div>
-          </div>
-        </div>
-      </main>
-    );
+    return <NotFoundUI />;
   }
 
-  // ✅ SSR fetch ONLY through our Next API (it adds API key server-side)
+  // ✅ SSR fetch via our Next API
   const snap = await fetchInvoiceSnapshot(finalInvoiceId);
 
   if (!snap) {
-    return (
-      <main className="min-h-screen bg-slate-50">
-        <div className="max-w-xl mx-auto px-4 py-10">
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 shadow-sm p-5">
-            <div className="text-sm font-semibold text-rose-900">
-              Invoice not found
-            </div>
-            <div className="mt-1 text-xs text-rose-800">
-              The payment link is invalid or expired. Please go back to the
-              store and create a new payment.
-            </div>
-            <div className="mt-2 text-[11px] text-rose-700 font-mono break-all">
-              invoiceId: {finalInvoiceId}
-            </div>
-          </div>
-        </div>
-      </main>
-    );
+    return <NotFoundUI invoiceId={finalInvoiceId} />;
   }
 
-  // Map snapshot -> InvoiceData for client UI
+  // Map snapshot -> InvoiceData for client UI (do not write nulls)
   const initialInvoice = {
     invoiceId: snap.invoiceId ?? finalInvoiceId,
     status: snap.status ?? "waiting",
+
     ...(snap.createdAt ? { createdAt: snap.createdAt } : {}),
     ...(snap.expiresAt ? { expiresAt: snap.expiresAt } : {}),
 
@@ -218,8 +202,6 @@ export default async function PaymentPage({ params, searchParams }: PageProps) {
     ...(snap.detectedAt ? { detectedAt: snap.detectedAt } : {}),
     ...(snap.confirmedAt ? { confirmedAt: snap.confirmedAt } : {}),
 
-    // ⚠️ Эти поля добавляй ТОЛЬКО если они реально есть в InvoiceData.
-    // Если TS ругается — просто УДАЛИ эти строки (значит их нет в типе).
     ...(snap.amlStatus ? { amlStatus: snap.amlStatus } : {}),
     ...(typeof snap.riskScore === "number"
       ? { riskScore: snap.riskScore }

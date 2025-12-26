@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CryptoPayQrBox } from "./CryptoPayQrBox";
 
 type CryptoPayWalletSectionProps = {
@@ -94,6 +95,8 @@ export function CryptoPayWalletSection({
   walletAddress,
   network: pspNetwork,
 }: CryptoPayWalletSectionProps) {
+  const router = useRouter();
+
   const token = normalizeToken(cryptoCurrency);
 
   // ✅ сеть по умолчанию: из PSP network если есть, иначе как раньше
@@ -168,18 +171,29 @@ export function CryptoPayWalletSection({
             ? data.error
             : `Request failed: HTTP ${res.status}`;
 
-        throw new Error(message);
-      }
-
-      if ("ok" in data && data.ok === false) {
+        // ✅ не ломаем UX — покажем ошибку, но всё равно уводим на success
+        setConfirmError(message);
+      } else if ("ok" in data && data.ok === false) {
         const msg =
           (data as SimulatePaidError).details ||
           (data as SimulatePaidError).error ||
           "Simulate paid failed";
-        throw new Error(msg);
+
+        // ✅ не ломаем UX — покажем ошибку, но всё равно уводим на success
+        setConfirmError(msg);
       }
+
+      // ✅ TOP UX: всегда уводим на success (там уже polling + все детали)
+      router.push(
+        `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
+      );
     } catch (e) {
+      // ✅ не ломаем UX — покажем ошибку, но всё равно уводим на success
       setConfirmError(e instanceof Error ? e.message : "Unknown error");
+
+      router.push(
+        `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
+      );
     } finally {
       setIsConfirming(false);
     }
@@ -207,11 +221,6 @@ export function CryptoPayWalletSection({
         </p>
       </div>
 
-      {/* ✅ Network UI:
-          - если PSP уже дал walletAddress (detected) — сеть фиксируем
-          - USDC: как раньше фиксируем BEP20
-          - USDT: переключатель только пока нет PSP wallet
-      */}
       {walletAddress ? (
         <div className="inline-flex items-center gap-2">
           <span className="text-[11px] text-slate-500">Network</span>
@@ -253,12 +262,10 @@ export function CryptoPayWalletSection({
         </div>
       )}
 
-      {/* Description */}
       <div className="text-xs text-slate-600">
         <p className="font-medium">{networkCfg.description}</p>
       </div>
 
-      {/* Address + Copy */}
       <div className="space-y-1 text-xs">
         <p className="text-[11px] text-slate-500">Payment details</p>
 
@@ -352,7 +359,7 @@ export function CryptoPayWalletSection({
 
       {confirmError && (
         <p className="text-[11px] text-rose-600">
-          Demo confirm failed: {confirmError}
+          Demo confirm warning: {confirmError}
         </p>
       )}
     </section>

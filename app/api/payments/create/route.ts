@@ -4,13 +4,11 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PSP_API_URL = (
-  process.env.PSP_API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  ""
-).replace(/\/+$/, "");
-
+const PSP_API_URL = (process.env.PSP_API_URL ?? "").replace(/\/+$/, "");
 const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
+
+// Optional: enable debug fields only when explicitly allowed
+const DEBUG = (process.env.DEBUG_PAYMENTS_API ?? "").trim() === "true";
 
 type JsonObject = Record<string, unknown>;
 
@@ -85,7 +83,6 @@ export async function POST(request: NextRequest) {
 
     orderId = extractField<string>(body, ["orderId", "description"], undefined);
 
-    // ✅ NEW: network from client
     network = normalizeNetwork(extractField(body, ["network"], "TRON"));
   } catch {
     // ignore
@@ -97,8 +94,9 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: "VALIDATION_ERROR",
         message: "amount must be > 0",
-        pspApiUrl: PSP_API_URL,
-        hasPspKey: Boolean(PSP_API_KEY),
+        ...(DEBUG
+          ? { pspApiUrl: PSP_API_URL, hasPspKey: Boolean(PSP_API_KEY) }
+          : {}),
       },
       { status: 400 }
     );
@@ -109,9 +107,10 @@ export async function POST(request: NextRequest) {
       {
         ok: false,
         error: "CONFIG_ERROR",
-        message: "PSP_API_URL is empty",
-        pspApiUrl: PSP_API_URL,
-        hasPspKey: Boolean(PSP_API_KEY),
+        message: "PSP_API_URL is empty (set PSP_API_URL and redeploy)",
+        ...(DEBUG
+          ? { pspApiUrl: PSP_API_URL, hasPspKey: Boolean(PSP_API_KEY) }
+          : {}),
       },
       { status: 500 }
     );
@@ -123,8 +122,9 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: "CONFIG_ERROR",
         message: "PSP_API_KEY is empty (set PSP_API_KEY in env and redeploy)",
-        pspApiUrl: PSP_API_URL,
-        hasPspKey: Boolean(PSP_API_KEY),
+        ...(DEBUG
+          ? { pspApiUrl: PSP_API_URL, hasPspKey: Boolean(PSP_API_KEY) }
+          : {}),
       },
       { status: 500 }
     );
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
       cache: "no-store",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": PSP_API_KEY, // ✅ psp-core uses x-api-key
+        "x-api-key": PSP_API_KEY,
       },
       body: JSON.stringify({
         merchantId: "mrc_test_001",
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
         fiatAmount: amount,
         fiatCurrency,
         cryptoCurrency,
-        network, // ✅ TRON / ETH
+        network,
         expiresInMinutes: 10,
       }),
     });
@@ -163,9 +163,7 @@ export async function POST(request: NextRequest) {
           error: "PSP_ERROR",
           message: msg,
           backendStatus,
-          backendData: data,
-          pspApiUrl: PSP_API_URL,
-          hasPspKey: Boolean(PSP_API_KEY),
+          ...(DEBUG ? { backendData: data, pspApiUrl: PSP_API_URL } : {}),
         },
         { status: 502 }
       );
@@ -182,28 +180,28 @@ export async function POST(request: NextRequest) {
           error: "PSP_ERROR",
           message: "PSP did not return invoice id",
           backendStatus,
-          backendData: data,
-          pspApiUrl: PSP_API_URL,
-          hasPspKey: Boolean(PSP_API_KEY),
+          ...(DEBUG ? { backendData: data, pspApiUrl: PSP_API_URL } : {}),
         },
         { status: 502 }
       );
     }
 
+    // Keep backend paymentUrl only as a debug/supplementary field, never as navigation source
     const backendPaymentUrl =
       extractField<string>(data, ["paymentUrl", "payment_url"], undefined) ??
       undefined;
 
-    const paymentUrl =
-      backendPaymentUrl ??
-      `${baseUrl}/open/pay/${encodeURIComponent(invoiceId)}`;
+    // ✅ Always return a hosted URL on THIS frontend origin
+    const hostedPaymentUrl = `${baseUrl}/open/pay/${encodeURIComponent(
+      invoiceId
+    )}`;
 
     return NextResponse.json(
       {
         ok: true,
         invoiceId,
-        paymentUrl,
-        network, // ✅ return network so you can verify instantly
+        paymentUrl: hostedPaymentUrl, // ✅ safe & stable
+        network,
 
         amount:
           extractField<number>(data, ["fiatAmount", "fiat_amount"], amount) ??
@@ -230,9 +228,14 @@ export async function POST(request: NextRequest) {
         expiresAt:
           extractField<string>(data, ["expiresAt", "expires_at"]) ?? undefined,
 
-        backendStatus,
-        pspApiUrl: PSP_API_URL,
-        hasPspKey: Boolean(PSP_API_KEY),
+        ...(DEBUG
+          ? {
+              backendStatus,
+              backendPaymentUrl,
+              pspApiUrl: PSP_API_URL,
+              hasPspKey: Boolean(PSP_API_KEY),
+            }
+          : {}),
       },
       { status: 200 }
     );
@@ -242,8 +245,7 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: "NETWORK_ERROR",
         message: err instanceof Error ? err.message : "Unknown fetch error",
-        pspApiUrl: PSP_API_URL,
-        hasPspKey: Boolean(PSP_API_KEY),
+        ...(DEBUG ? { pspApiUrl: PSP_API_URL } : {}),
       },
       { status: 502 }
     );

@@ -121,9 +121,6 @@ export function CryptoPayStatusWithPolling({
   const statusRef = useRef<InvoiceStatus>(normalizeStatus(initialStatus));
   const redirectedRef = useRef(false);
 
-  // ✅ защита от двойного запуска эффекта (Strict Mode в dev)
-  const startedRef = useRef(false);
-
   useEffect(() => {
     const s = normalizeStatus(initialStatus);
     setStatus(s);
@@ -131,9 +128,6 @@ export function CryptoPayStatusWithPolling({
   }, [initialStatus]);
 
   useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -146,8 +140,10 @@ export function CryptoPayStatusWithPolling({
         return;
       }
 
+      // stop polling once final
       if (isFinalStatus(statusRef.current)) return;
 
+      // client-side time expiry fallback
       if (isExpiredByTime(expiresAt)) {
         statusRef.current = "expired";
         setStatus("expired");
@@ -157,9 +153,7 @@ export function CryptoPayStatusWithPolling({
       try {
         const res = await fetch(
           `/api/payments/status?invoiceId=${encodeURIComponent(id)}`,
-          {
-            cache: "no-store",
-          }
+          { cache: "no-store" }
         );
 
         if (res.ok) {
@@ -199,7 +193,6 @@ export function CryptoPayStatusWithPolling({
     return () => {
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
-      startedRef.current = false;
     };
   }, [invoiceId, expiresAt, onInvoiceUpdate, router]);
 
