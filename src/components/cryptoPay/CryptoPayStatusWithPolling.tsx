@@ -1,7 +1,6 @@
 // src/components/cryptoPay/CryptoPayStatusWithPolling.tsx
 "use client";
 
-import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CryptoPayStatusBadge } from "./CryptoPayStatusBadge";
@@ -13,96 +12,132 @@ type Props = {
   invoiceId: string;
   initialStatus: InvoiceStatus;
   expiresAt?: string | null;
-
-  onInvoiceUpdate?: React.Dispatch<React.SetStateAction<InvoiceData>>;
+  onInvoiceUpdate?: (updater: (prev: InvoiceData) => InvoiceData) => void;
 };
-
-function isFinalStatus(s: InvoiceStatus) {
-  return s === "confirmed" || s === "expired" || s === "rejected";
-}
-
-function normalizeStatus(s?: string | null): InvoiceStatus {
-  return s === "waiting" ||
-    s === "confirmed" ||
-    s === "expired" ||
-    s === "rejected"
-    ? (s as InvoiceStatus)
-    : "waiting";
-}
-
-function isExpiredByTime(expiresAt?: string | null) {
-  if (!expiresAt) return false;
-  const t = Date.parse(expiresAt);
-  if (Number.isNaN(t)) return false;
-  return Date.now() >= t;
-}
 
 type StatusApiOk = {
   ok: true;
-  [key: string]: any;
+  invoiceId?: string;
+  status?: string;
+  expiresAt?: string | null;
+
+  createdAt?: string | null;
+  detectedAt?: string | null;
+  confirmedAt?: string | null;
+
+  fiatAmount?: number;
+  fiatCurrency?: string;
+  cryptoAmount?: number;
+  cryptoCurrency?: string;
+  network?: string;
+
+  grossAmount?: number;
+  feeAmount?: number;
+  netAmount?: number;
+  feeBps?: number;
+  feePayer?: string;
+
+  fxRate?: number;
+  fxPair?: string;
+
+  txStatus?: string;
+  txHash?: string | null;
+  walletAddress?: string | null;
+  confirmations?: number;
+  requiredConfirmations?: number;
+
+  amlStatus?: string | null;
+  riskScore?: number | null;
+  assetStatus?: string | null;
+  assetRiskScore?: number | null;
+
+  decisionStatus?: string | null;
+  decisionReasonCode?: string | null;
+  decisionReasonText?: string | null;
+  decidedAt?: string | null;
+  decidedBy?: string | null;
+
+  merchantId?: string | null;
 };
 
 type StatusApiResponse =
   | StatusApiOk
   | { ok: false; error?: string; details?: string };
 
-function mergeSnapshot(prev: InvoiceData, snap: StatusApiOk): InvoiceData {
-  const src = (snap as any).invoice ?? snap;
+function normalizeStatus(s?: string | null): InvoiceStatus {
+  return s === "waiting" ||
+    s === "confirmed" ||
+    s === "expired" ||
+    s === "rejected"
+    ? s
+    : "waiting";
+}
 
+function isFinalStatus(s: InvoiceStatus) {
+  return s === "confirmed" || s === "expired" || s === "rejected";
+}
+
+function isExpiredByTime(expiresAt?: string | null) {
+  if (!expiresAt) return false;
+  const t = Date.parse(expiresAt);
+  return Number.isFinite(t) && Date.now() >= t;
+}
+
+function mergeSnapshot(prev: InvoiceData, snap: StatusApiOk): InvoiceData {
   const next: InvoiceData = { ...prev };
 
-  const setIfDefined = <K extends keyof InvoiceData>(key: K, value: any) => {
-    if (value !== undefined && value !== null) {
-      next[key] = value;
-    }
+  const set = <K extends keyof InvoiceData>(key: K, value: unknown) => {
+    if (value === undefined || value === null) return;
+    (next[key] as unknown) = value as InvoiceData[K];
   };
 
-  setIfDefined("invoiceId", src.invoiceId ?? src.id);
+  set("invoiceId", snap.invoiceId ?? prev.invoiceId);
+  set("status", normalizeStatus(snap.status) as InvoiceData["status"]);
+  set("expiresAt", snap.expiresAt);
 
-  setIfDefined("status", normalizeStatus(src.status) as InvoiceData["status"]);
-  setIfDefined("expiresAt", src.expiresAt);
+  set("createdAt", snap.createdAt);
+  set("detectedAt", snap.detectedAt);
+  set("confirmedAt", snap.confirmedAt);
 
-  setIfDefined("createdAt", src.createdAt);
-  setIfDefined("detectedAt", src.detectedAt);
-  setIfDefined("confirmedAt", src.confirmedAt);
+  set("fiatAmount", snap.fiatAmount);
+  set("fiatCurrency", snap.fiatCurrency);
+  set("cryptoAmount", snap.cryptoAmount);
+  set("cryptoCurrency", snap.cryptoCurrency);
+  set("network", snap.network);
 
-  setIfDefined("fiatAmount", src.fiatAmount);
-  setIfDefined("fiatCurrency", src.fiatCurrency);
-  setIfDefined("cryptoAmount", src.cryptoAmount);
-  setIfDefined("cryptoCurrency", src.cryptoCurrency);
-  setIfDefined("network", src.network);
+  set("grossAmount", snap.grossAmount);
+  set("feeAmount", snap.feeAmount);
+  set("netAmount", snap.netAmount);
+  set("feeBps", snap.feeBps);
+  set("feePayer", snap.feePayer);
 
-  setIfDefined("grossAmount", src.grossAmount);
-  setIfDefined("feeAmount", src.feeAmount);
-  setIfDefined("netAmount", src.netAmount);
-  setIfDefined("feeBps", src.feeBps);
-  setIfDefined("feePayer", src.feePayer);
+  set("fxRate", snap.fxRate);
+  set("fxPair", snap.fxPair);
 
-  setIfDefined("fxRate", src.fxRate);
-  setIfDefined("fxPair", src.fxPair);
+  // tx (не затираем если пришло null/undefined)
+  set("txStatus", snap.txStatus ?? prev.txStatus);
+  set("txHash", snap.txHash ?? prev.txHash);
+  set("walletAddress", snap.walletAddress ?? prev.walletAddress);
 
-  // tx: не затираем null/undefined
-  setIfDefined("txStatus", src.txStatus ?? prev.txStatus ?? "pending");
-  setIfDefined("txHash", src.txHash);
-  setIfDefined("walletAddress", src.walletAddress);
+  if (typeof snap.confirmations === "number") {
+    set("confirmations", snap.confirmations);
+  }
+  if (typeof snap.requiredConfirmations === "number") {
+    set("requiredConfirmations", snap.requiredConfirmations);
+  }
 
-  if (typeof src.confirmations === "number")
-    next.confirmations = src.confirmations;
-  if (typeof src.requiredConfirmations === "number")
-    next.requiredConfirmations = src.requiredConfirmations;
+  set("amlStatus", snap.amlStatus);
+  set("riskScore", snap.riskScore);
+  set("assetStatus", snap.assetStatus);
+  set("assetRiskScore", snap.assetRiskScore);
 
-  setIfDefined("amlStatus", src.amlStatus);
-  setIfDefined("riskScore", src.riskScore);
-  setIfDefined("assetStatus", src.assetStatus);
-  setIfDefined("assetRiskScore", src.assetRiskScore);
+  set("decisionStatus", snap.decisionStatus);
+  set("decisionReasonCode", snap.decisionReasonCode);
+  set("decisionReasonText", snap.decisionReasonText);
+  set("decidedAt", snap.decidedAt);
+  set("decidedBy", snap.decidedBy);
 
-  setIfDefined("decisionStatus", src.decisionStatus);
-  setIfDefined("decisionReasonCode", src.decisionReasonCode);
-  setIfDefined("decisionReasonText", src.decisionReasonText);
-  setIfDefined("decidedAt", src.decidedAt);
-  setIfDefined("decidedBy", src.decidedBy);
-
-  setIfDefined("merchantId", src.merchantId);
+  set("merchantId", snap.merchantId);
 
   return next;
 }
@@ -115,35 +150,35 @@ export function CryptoPayStatusWithPolling({
 }: Props) {
   const router = useRouter();
 
-  const [status, setStatus] = useState<InvoiceStatus>(
+  const [status, setStatus] = useState<InvoiceStatus>(() =>
     normalizeStatus(initialStatus)
   );
+
   const statusRef = useRef<InvoiceStatus>(normalizeStatus(initialStatus));
   const redirectedRef = useRef(false);
 
+  // синхронизация initialStatus → ref + state (один раз)
   useEffect(() => {
     const s = normalizeStatus(initialStatus);
-    setStatus(s);
     statusRef.current = s;
+    setStatus(s);
   }, [initialStatus]);
 
   useEffect(() => {
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const tick = async () => {
+    const poll = async () => {
       if (cancelled) return;
 
-      const id = String(invoiceId ?? "").trim();
-      if (!id) {
-        timeoutId = setTimeout(tick, 2500);
+      const id = invoiceId.trim();
+      if (!id || redirectedRef.current) {
+        timer = setTimeout(poll, 2500);
         return;
       }
 
-      // stop polling once final
       if (isFinalStatus(statusRef.current)) return;
 
-      // client-side time expiry fallback
       if (isExpiredByTime(expiresAt)) {
         statusRef.current = "expired";
         setStatus("expired");
@@ -156,43 +191,38 @@ export function CryptoPayStatusWithPolling({
           { cache: "no-store" }
         );
 
-        if (res.ok) {
-          const snap = (await res.json()) as StatusApiResponse;
+        if (!res.ok) throw new Error("status fetch failed");
 
-          if ((snap as any).ok) {
-            const okSnap = snap as StatusApiOk;
+        const snap = (await res.json()) as StatusApiResponse;
+        if (!snap.ok) throw new Error("status api error");
 
-            onInvoiceUpdate?.((prev) => mergeSnapshot(prev, okSnap));
+        onInvoiceUpdate?.((prev) => mergeSnapshot(prev, snap));
 
-            const nextStatus = normalizeStatus((okSnap as any).status);
-            if (nextStatus !== statusRef.current) {
-              statusRef.current = nextStatus;
-              setStatus(nextStatus);
-            }
+        const nextStatus = normalizeStatus(snap.status);
+        if (nextStatus !== statusRef.current) {
+          statusRef.current = nextStatus;
+          setStatus(nextStatus);
+        }
 
-            if (nextStatus === "confirmed" && !redirectedRef.current) {
-              redirectedRef.current = true;
-              router.push(
-                `/open/pay/success?invoiceId=${encodeURIComponent(id)}`
-              );
-              return;
-            }
+        if (nextStatus === "confirmed" && !redirectedRef.current) {
+          redirectedRef.current = true;
+          router.push(`/open/pay/success?invoiceId=${encodeURIComponent(id)}`);
+          return;
+        }
 
-            if (isFinalStatus(nextStatus)) return;
-          }
+        if (!isFinalStatus(nextStatus)) {
+          timer = setTimeout(poll, 2500);
         }
       } catch {
-        // ignore
+        timer = setTimeout(poll, 3000);
       }
-
-      timeoutId = setTimeout(tick, 2500);
     };
 
-    void tick();
+    void poll();
 
     return () => {
       cancelled = true;
-      if (timeoutId) clearTimeout(timeoutId);
+      if (timer) clearTimeout(timer);
     };
   }, [invoiceId, expiresAt, onInvoiceUpdate, router]);
 

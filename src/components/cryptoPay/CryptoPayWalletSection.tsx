@@ -10,12 +10,11 @@ type CryptoPayWalletSectionProps = {
   cryptoAmount: number;
   invoiceId: string;
 
-  // ✅ NEW: динамика из PSP (после detected)
   walletAddress?: string | null;
-  network?: string | null; // "TRON" | "BSC" | ...
+  network?: string | null; // "TRON" | "ETH" | "BSC" | ...
 };
 
-type NetworkKey = "trc20" | "bep20";
+type NetworkKey = "trc20" | "bep20" | "erc20";
 type TokenKey = "USDT" | "USDC";
 
 type TokenNetworkConfig = Record<
@@ -36,6 +35,12 @@ const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
       description: "Tether USDT TRC-20 · TRON network",
       address: "TAEtcMJZ4YchkL3JtmcsR9JK2KzUbaMrh3",
     },
+    erc20: {
+      code: "ERC20 · Ethereum",
+      label: "ERC20 · Ethereum",
+      description: "Tether USDT ERC-20 · Ethereum network",
+      address: "0xUSDT_ERC20_DEMO_ADDRESS_HERE",
+    },
     bep20: {
       code: "BEP20 · BNB",
       label: "BEP20 · BNB",
@@ -50,6 +55,12 @@ const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
       label: "TRC20 · TRON",
       description: "USD Coin USDC TRC-20 · TRON network",
       address: "T_USDC_TRC20_ADDRESS_HERE",
+    },
+    erc20: {
+      code: "ERC20 · Ethereum",
+      label: "ERC20 · Ethereum",
+      description: "USD Coin USDC ERC-20 · Ethereum network",
+      address: "0xUSDC_ERC20_DEMO_ADDRESS_HERE",
     },
     bep20: {
       code: "BEP20 · BNB",
@@ -82,10 +93,11 @@ function inferNetworkKey(
     .toUpperCase();
 
   if (n === "TRON" || n === "TRC20") return "trc20";
+  if (n === "ETH" || n === "ETHEREUM" || n === "ERC20") return "erc20";
   if (n === "BSC" || n === "BNB" || n === "BEP20") return "bep20";
 
-  // fallback как было
-  return token === "USDC" ? "bep20" : "trc20";
+  // fallback as before (demo default)
+  return token === "USDC" ? "erc20" : "trc20";
 }
 
 export function CryptoPayWalletSection({
@@ -99,22 +111,34 @@ export function CryptoPayWalletSection({
 
   const token = normalizeToken(cryptoCurrency);
 
-  // ✅ сеть по умолчанию: из PSP network если есть, иначе как раньше
-  const defaultNet = inferNetworkKey(pspNetwork, token);
-  const [activeNet, setActiveNet] = useState<NetworkKey>(defaultNet);
+  // If PSP provided network, lock it.
+  const pspNetKey = useMemo<NetworkKey | null>(() => {
+    const n = String(pspNetwork ?? "").trim();
+    return n ? inferNetworkKey(n, token) : null;
+  }, [pspNetwork, token]);
 
-  // ✅ если токен меняется — пересчёт сети
+  // activeNet only matters in demo mode (no PSP network)
+  const [activeNet, setActiveNet] = useState<NetworkKey>(
+    () => pspNetKey ?? inferNetworkKey(null, token)
+  );
+
   useEffect(() => {
-    setActiveNet(inferNetworkKey(pspNetwork, token));
-  }, [token, pspNetwork]);
+    // whenever token or pspNetwork changes, align
+    if (pspNetKey) {
+      setActiveNet(pspNetKey);
+    } else {
+      setActiveNet(inferNetworkKey(null, token));
+    }
+  }, [pspNetKey, token]);
+
+  const netKeyToUse: NetworkKey = pspNetKey ?? activeNet;
 
   const [copiedKind, setCopiedKind] = useState<CopyKind>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  const networkCfg = TOKEN_CONFIG[token][activeNet];
+  const networkCfg = TOKEN_CONFIG[token][netKeyToUse];
 
-  // ✅ адрес: если PSP дал walletAddress — показываем его, иначе demo address
   const addressToShow = walletAddress?.trim()
     ? walletAddress.trim()
     : networkCfg.address;
@@ -130,9 +154,9 @@ export function CryptoPayWalletSection({
     p.set("amount", amountNumber);
     p.set("currency", token);
     p.set("invoice", invoiceId);
-    p.set("network", activeNet);
+    p.set("network", netKeyToUse);
     return `${addressToShow}?${p.toString()}`;
-  }, [addressToShow, amountNumber, token, invoiceId, activeNet]);
+  }, [addressToShow, amountNumber, token, invoiceId, netKeyToUse]);
 
   async function copy(text: string, kind: CopyKind) {
     try {
@@ -171,7 +195,6 @@ export function CryptoPayWalletSection({
             ? data.error
             : `Request failed: HTTP ${res.status}`;
 
-        // ✅ не ломаем UX — покажем ошибку, но всё равно уводим на success
         setConfirmError(message);
       } else if ("ok" in data && data.ok === false) {
         const msg =
@@ -179,18 +202,14 @@ export function CryptoPayWalletSection({
           (data as SimulatePaidError).error ||
           "Simulate paid failed";
 
-        // ✅ не ломаем UX — покажем ошибку, но всё равно уводим на success
         setConfirmError(msg);
       }
 
-      // ✅ TOP UX: всегда уводим на success (там уже polling + все детали)
       router.push(
         `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
       );
     } catch (e) {
-      // ✅ не ломаем UX — покажем ошибку, но всё равно уводим на success
       setConfirmError(e instanceof Error ? e.message : "Unknown error");
-
       router.push(
         `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
       );
@@ -198,6 +217,8 @@ export function CryptoPayWalletSection({
       setIsConfirming(false);
     }
   }
+
+  const isLockedByPsp = Boolean(pspNetKey);
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-4">
@@ -221,18 +242,11 @@ export function CryptoPayWalletSection({
         </p>
       </div>
 
-      {walletAddress ? (
+      {isLockedByPsp ? (
         <div className="inline-flex items-center gap-2">
           <span className="text-[11px] text-slate-500">Network</span>
           <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-900">
             {networkCfg.label}
-          </span>
-        </div>
-      ) : token === "USDC" ? (
-        <div className="inline-flex items-center gap-2">
-          <span className="text-[11px] text-slate-500">Network</span>
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-900">
-            BEP20 · BNB
           </span>
         </div>
       ) : (
@@ -241,18 +255,31 @@ export function CryptoPayWalletSection({
             type="button"
             onClick={() => setActiveNet("trc20")}
             className={`px-3 py-1.5 rounded-full transition ${
-              activeNet === "trc20"
+              netKeyToUse === "trc20"
                 ? "bg-white shadow-sm text-slate-900"
                 : "text-slate-500"
             }`}
           >
             TRC20 · TRON
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveNet("erc20")}
+            className={`px-3 py-1.5 rounded-full transition ${
+              netKeyToUse === "erc20"
+                ? "bg-white shadow-sm text-slate-900"
+                : "text-slate-500"
+            }`}
+          >
+            ERC20 · ETH
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveNet("bep20")}
             className={`px-3 py-1.5 rounded-full transition ${
-              activeNet === "bep20"
+              netKeyToUse === "bep20"
                 ? "bg-white shadow-sm text-slate-900"
                 : "text-slate-500"
             }`}

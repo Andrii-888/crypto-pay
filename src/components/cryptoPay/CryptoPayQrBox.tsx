@@ -7,6 +7,8 @@ type CryptoPayQrBoxProps = {
 };
 
 export function CryptoPayQrBox({ value }: CryptoPayQrBoxProps) {
+  if (!value) return null; // optional safety
+
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="w-full rounded-xl border border-slate-200 bg-white shadow-sm p-4">
@@ -17,11 +19,9 @@ export function CryptoPayQrBox({ value }: CryptoPayQrBoxProps) {
 
         <div className="mt-3 flex items-center justify-center">
           <div className="rounded-2xl bg-slate-50 p-3 border border-slate-200">
-            <QRCode
-              value={value}
-              size={220}
-              style={{ height: "220px", width: "220px" }}
-            />
+            <div className="aspect-square w-220px">
+              <QRCode value={value} size={220} />
+            </div>
           </div>
         </div>
 

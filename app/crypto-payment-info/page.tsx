@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 
 type Lang = "en" | "it" | "ru";
 
@@ -161,12 +162,12 @@ export default function CryptoPaymentInfoPage() {
             </p>
 
             <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-              <a
+              <Link
                 href="/"
                 className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-center text-xs font-semibold text-slate-900 hover:bg-slate-50 sm:text-sm"
               >
                 Back to store
-              </a>
+              </Link>
             </div>
           </div>
         </div>

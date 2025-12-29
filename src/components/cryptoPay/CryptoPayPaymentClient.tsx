@@ -1,7 +1,7 @@
 // src/components/cryptoPay/CryptoPayPaymentClient.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { InvoiceData } from "@/lib/invoiceStore";
 
 import { CryptoPayHeader } from "@/components/cryptoPay/CryptoPayHeader";
@@ -14,47 +14,10 @@ type Props = {
   initialInvoice: InvoiceData;
 };
 
-/**
- * Merge patch into invoice without wiping existing fields with null/undefined.
- * - Keeps prev values if next has null/undefined
- * - Allows patch updates coming from polling (partial invoice)
- */
-function mergeInvoice(
-  prev: InvoiceData,
-  next: Partial<InvoiceData>
-): InvoiceData {
-  const out: InvoiceData = { ...prev };
+function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
+  const [invoice, setInvoice] = useState<InvoiceData>(() => initialInvoice);
 
-  for (const [key, value] of Object.entries(next)) {
-    if (value === undefined || value === null) continue;
-    (out as any)[key] = value;
-  }
-
-  return out;
-}
-
-export function CryptoPayPaymentClient({ initialInvoice }: Props) {
-  const [invoice, setInvoice] = useState<InvoiceData>(initialInvoice);
-
-  // Keep local state in sync when SSR/rehydration sends a new invoice snapshot.
-  // Important: don’t overwrite existing state if it’s the same invoiceId.
-  useEffect(() => {
-    const nextId = initialInvoice?.invoiceId?.trim();
-    if (!nextId) return;
-
-    setInvoice((prev) => {
-      const prevId = prev?.invoiceId?.trim();
-      if (!prevId) return initialInvoice;
-
-      // Same invoice -> keep prev (polling may already have richer fields)
-      if (prevId === nextId) return prev;
-
-      // Different invoice -> replace
-      return initialInvoice;
-    });
-  }, [initialInvoice]);
-
-  const invoiceId = invoice?.invoiceId?.trim();
+  const invoiceId = (invoice.invoiceId ?? "").trim();
 
   // Hard stop: don’t render payment UI until we actually have invoiceId.
   if (!invoiceId) {
@@ -88,13 +51,7 @@ export function CryptoPayPaymentClient({ initialInvoice }: Props) {
         invoiceId={invoiceId}
         initialStatus={invoice.status}
         expiresAt={invoice.expiresAt ?? ""}
-        onInvoiceUpdate={(updater) => {
-          if (typeof updater === "function") {
-            setInvoice((prev) => updater(prev));
-            return;
-          }
-          setInvoice((prev) => mergeInvoice(prev, updater as any));
-        }}
+        onInvoiceUpdate={setInvoice}
       />
 
       <div className="mt-3 mb-4">
@@ -154,5 +111,13 @@ export function CryptoPayPaymentClient({ initialInvoice }: Props) {
         )}
       </div>
     </>
+  );
+}
+
+export function CryptoPayPaymentClient({ initialInvoice }: Props) {
+  // ✅ If invoiceId changes (new invoice), fully reset local state without effects.
+  const key = (initialInvoice.invoiceId ?? "").trim() || "invoice";
+  return (
+    <CryptoPayPaymentClientInner key={key} initialInvoice={initialInvoice} />
   );
 }

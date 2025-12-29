@@ -1,7 +1,7 @@
 // src/components/checkout/CheckoutClient.tsx
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type CheckoutClientProps = {
@@ -40,12 +40,24 @@ const buttonLabel = (n: "TRON" | "ETH") =>
     ? "Continue to Crypto Pay (TRON)"
     : "Continue to Crypto Pay (ETH)";
 
+function sanitizeAmount(v: number) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // 2 decimals as canonical "checkout amount"
+  return Math.round(n * 100) / 100;
+}
+
 export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
   const router = useRouter();
 
-  const [amount] = useState(() =>
-    !Number.isFinite(initialAmount) || initialAmount < 0 ? 0 : initialAmount
+  const [amount, setAmount] = useState<number>(() =>
+    sanitizeAmount(initialAmount)
   );
+
+  // ✅ keep amount synced with server/cart updates
+  useEffect(() => {
+    setAmount(sanitizeAmount(initialAmount));
+  }, [initialAmount]);
 
   const [token, setToken] = useState<"USDT" | "USDC">("USDT");
   const [network, setNetwork] = useState<"TRON" | "ETH">(
@@ -60,11 +72,21 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
     setNetwork(defaultNetworkForToken(next)); // auto-pair token -> network
   }
 
+  const displayAmount = useMemo(
+    () => (amount > 0 ? amount.toFixed(2) : "0.00"),
+    [amount]
+  );
+
   async function handleCreateInvoice() {
-    if (!amount || amount <= 0) {
+    const amountToSend = sanitizeAmount(amount);
+
+    if (!amountToSend || amountToSend <= 0) {
       setError("Cart amount is missing. Go back and add at least one product.");
       return;
     }
+
+    // ✅ enforce token->network pairing (hard safety)
+    const safeNetwork: "TRON" | "ETH" = token === "USDT" ? "TRON" : "ETH";
 
     setLoading(true);
     setError(null);
@@ -74,10 +96,10 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount,
+          amount: amountToSend,
           fiatCurrency: "EUR",
           cryptoCurrency: token,
-          network, // ✅ IMPORTANT: send network to backend
+          network: safeNetwork,
         }),
       });
 
@@ -95,7 +117,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
           `Failed to create invoice (HTTP ${res.status})`;
 
         setError(msg);
-        return; // ✅ don't throw (avoid dev overlay)
+        return;
       }
 
       const invoiceId = data?.invoiceId;
@@ -104,7 +126,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
         return;
       }
 
-      // ✅ Correct rule: always redirect by invoiceId to our internal route
       router.push(`/open/pay/${encodeURIComponent(invoiceId)}`);
     } catch (err: unknown) {
       setError(
@@ -116,8 +137,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
       setLoading(false);
     }
   }
-
-  const displayAmount = amount > 0 ? amount.toFixed(2) : "0.00";
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -179,7 +198,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
               </p>
             </div>
 
-            {/* Token */}
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-500">Stablecoin</span>
 
@@ -209,7 +227,6 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
               </div>
             </div>
 
-            {/* Network (paired to token) */}
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-500">Network</span>
 

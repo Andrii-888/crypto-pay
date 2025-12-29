@@ -11,6 +11,9 @@ type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 type OkResponse = {
   ok: true;
 
+  // debug
+  buildStamp?: string;
+
   // required
   invoiceId: string;
   status: InvoiceStatus;
@@ -66,17 +69,23 @@ type ErrResponse = {
   pspApiUrl?: string;
 };
 
+type JsonObject = Record<string, unknown>;
+
+function asObject(v: unknown): JsonObject {
+  return v && typeof v === "object" ? (v as JsonObject) : {};
+}
+
 async function safeReadBody(res: Response): Promise<string | undefined> {
   const ct = res.headers.get("content-type") ?? "";
   if (ct.includes("application/json")) {
-    const json = await res.json().catch(() => null);
+    const json = (await res.json().catch(() => null)) as unknown;
     return json ? JSON.stringify(json) : undefined;
   }
   const text = await res.text().catch(() => "");
   return text ? text.slice(0, 800) : undefined;
 }
 
-function normalizeInvoiceStatus(raw: any): InvoiceStatus {
+function normalizeInvoiceStatus(raw: unknown): InvoiceStatus {
   const s = String(raw ?? "waiting").toLowerCase();
   if (
     s === "confirmed" ||
@@ -84,12 +93,12 @@ function normalizeInvoiceStatus(raw: any): InvoiceStatus {
     s === "rejected" ||
     s === "waiting"
   ) {
-    return s;
+    return s as InvoiceStatus;
   }
   return "waiting";
 }
 
-function numOrNull(v: any): number | null {
+function numOrNull(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string" && v.trim() !== "") {
     const n = Number(v);
@@ -98,13 +107,15 @@ function numOrNull(v: any): number | null {
   return null;
 }
 
-function strOrNull(v: any): string | null {
-  return typeof v === "string" && v.length ? v : null;
+function strOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s.length ? s : null;
 }
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const invoiceId = searchParams.get("invoiceId");
+  const invoiceId = (searchParams.get("invoiceId") ?? "").trim();
 
   if (!invoiceId) {
     const res: ErrResponse = { ok: false, error: "Missing invoiceId" };
@@ -129,11 +140,15 @@ export async function GET(req: Request) {
     return NextResponse.json(res, { status: 500 });
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
   try {
     const url = `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`;
 
     const pspRes = await fetch(url, {
       cache: "no-store",
+      signal: controller.signal,
       headers: {
         "x-api-key": PSP_API_KEY,
         Accept: "application/json",
@@ -151,31 +166,26 @@ export async function GET(req: Request) {
       return NextResponse.json(res, { status: 502 });
     }
 
-    const data = (await pspRes.json().catch(() => ({}))) as any;
+    const raw = (await pspRes.json().catch(() => ({}))) as unknown;
+    const data = asObject(raw);
 
     const res: OkResponse = {
       ok: true,
-
-      // @ts-expect-error debug stamp
       buildStamp: BUILD_STAMP,
 
-      // required
       invoiceId: String(data.id ?? data.invoiceId ?? invoiceId),
       status: normalizeInvoiceStatus(data.status),
 
-      // core
       createdAt: strOrNull(data.createdAt),
       expiresAt: strOrNull(data.expiresAt),
       paymentUrl: strOrNull(data.paymentUrl),
       merchantId: strOrNull(data.merchantId),
 
-      // amounts
       fiatAmount: numOrNull(data.fiatAmount),
       fiatCurrency: strOrNull(data.fiatCurrency),
       cryptoAmount: numOrNull(data.cryptoAmount),
       cryptoCurrency: strOrNull(data.cryptoCurrency),
 
-      // fees/fx
       grossAmount: numOrNull(data.grossAmount),
       feeAmount: numOrNull(data.feeAmount),
       netAmount: numOrNull(data.netAmount),
@@ -184,7 +194,6 @@ export async function GET(req: Request) {
       fxRate: numOrNull(data.fxRate),
       fxPair: strOrNull(data.fxPair),
 
-      // network + tx
       network: strOrNull(data.network),
       txStatus: strOrNull(data.txStatus),
       txHash: strOrNull(data.txHash),
@@ -194,7 +203,6 @@ export async function GET(req: Request) {
       detectedAt: strOrNull(data.detectedAt),
       confirmedAt: strOrNull(data.confirmedAt),
 
-      // aml/decision
       amlStatus: strOrNull(data.amlStatus),
       riskScore: numOrNull(data.riskScore),
       assetStatus: strOrNull(data.assetStatus),
@@ -207,14 +215,23 @@ export async function GET(req: Request) {
       decidedBy: strOrNull(data.decidedBy),
     };
 
-    return NextResponse.json(res, { status: 200 });
-  } catch (e) {
+    const out = NextResponse.json(res, { status: 200 });
+    out.headers.set("Cache-Control", "no-store");
+    return out;
+  } catch (e: unknown) {
+    const err =
+      e instanceof Error && e.name === "AbortError"
+        ? "PSP timeout"
+        : "Fetch failed";
+
     const res: ErrResponse = {
       ok: false,
-      error: "Fetch failed",
+      error: err,
       details: e instanceof Error ? e.message : "Unknown error",
       pspApiUrl: PSP_API_URL,
     };
     return NextResponse.json(res, { status: 502 });
+  } finally {
+    clearTimeout(timeout);
   }
 }

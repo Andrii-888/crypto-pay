@@ -1,5 +1,6 @@
 // app/api/payments/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +12,8 @@ const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
 const DEBUG = (process.env.DEBUG_PAYMENTS_API ?? "").trim() === "true";
 
 type JsonObject = Record<string, unknown>;
+
+type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
 function extractField<T = unknown>(
   source: unknown,
@@ -30,11 +33,52 @@ function toUpperSafe(v: unknown, fallback: string) {
   return typeof v === "string" && v.trim() ? v.trim().toUpperCase() : fallback;
 }
 
+function sanitizeAmount(v: unknown) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // canonical 2 decimals (important for "amounts match")
+  return Math.round(n * 100) / 100;
+}
+
 function normalizeNetwork(v: unknown): "TRON" | "ETH" {
   const n = toUpperSafe(v, "TRON");
   if (n === "TRON" || n === "TRC20") return "TRON";
   if (n === "ETH" || n === "ETHEREUM" || n === "ERC20") return "ETH";
   return "TRON";
+}
+
+function normalizeToken(v: unknown): "USDT" | "USDC" {
+  const t = toUpperSafe(v, "USDT");
+  return t === "USDC" ? "USDC" : "USDT";
+}
+
+/**
+ * Guardrail: token <-> network pairing.
+ * For demo we keep it strict:
+ * - USDT -> TRON
+ * - USDC -> ETH
+ */
+function enforceTokenNetworkPair(
+  token: "USDT" | "USDC",
+  net: "TRON" | "ETH"
+): "TRON" | "ETH" {
+  // бизнес-правило PSP
+  if (token === "USDT") return "TRON";
+  if (token === "USDC") return "ETH";
+
+  return net; // fallback (на будущее)
+}
+
+function normalizeInvoiceStatus(raw: unknown): InvoiceStatus {
+  const s = String(raw ?? "waiting").toLowerCase();
+  if (
+    s === "confirmed" ||
+    s === "expired" ||
+    s === "rejected" ||
+    s === "waiting"
+  )
+    return s;
+  return "waiting";
 }
 
 function getOrigin(req: NextRequest) {
@@ -52,43 +96,53 @@ async function safeReadBody(res: Response): Promise<unknown> {
   const ct = res.headers.get("content-type") ?? "";
   if (ct.includes("application/json")) return res.json().catch(() => ({}));
   const text = await res.text().catch(() => "");
-  return text ? { message: text.slice(0, 500) } : {};
+  return text ? { message: text.slice(0, 1000) } : {};
 }
 
 export async function POST(request: NextRequest) {
   const baseUrl = getOrigin(request);
 
-  let amount = 0;
+  // defaults
+  let fiatAmount = 0;
   let fiatCurrency = "EUR";
   let cryptoCurrency: "USDT" | "USDC" = "USDT";
-  let orderId: string | undefined;
   let network: "TRON" | "ETH" = "TRON";
+  let orderId: string | undefined;
 
   try {
     const body = (await request.json().catch(() => ({}))) as JsonObject;
 
-    amount =
-      Number(extractField(body, ["amount", "fiatAmount", "total"], 0)) || 0;
+    fiatAmount = sanitizeAmount(
+      extractField(body, ["amount", "fiatAmount", "total"], 0)
+    );
 
     fiatCurrency = toUpperSafe(
       extractField(body, ["fiatCurrency", "currency"], "EUR"),
       "EUR"
     );
 
-    const token = toUpperSafe(
-      extractField(body, ["cryptoCurrency", "token"], "USDT"),
-      "USDT"
+    cryptoCurrency = normalizeToken(
+      extractField(body, ["cryptoCurrency", "token"], "USDT")
     );
-    cryptoCurrency = token === "USDC" ? "USDC" : "USDT";
 
-    orderId = extractField<string>(body, ["orderId", "description"], undefined);
+    // network may come from UI, but we enforce pairing to avoid weird combos
+    const reqNet = normalizeNetwork(extractField(body, ["network"], "TRON"));
+    network = enforceTokenNetworkPair(cryptoCurrency, reqNet);
 
-    network = normalizeNetwork(extractField(body, ["network"], "TRON"));
+    const rawOrderId = extractField<string>(
+      body,
+      ["orderId", "order_id"],
+      undefined
+    );
+    orderId =
+      typeof rawOrderId === "string" && rawOrderId.trim()
+        ? rawOrderId.trim().slice(0, 80)
+        : undefined;
   } catch {
     // ignore
   }
 
-  if (!amount || amount <= 0) {
+  if (!fiatAmount || fiatAmount <= 0) {
     return NextResponse.json(
       {
         ok: false,
@@ -130,6 +184,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // always unique & stable
+  const generatedOrderId = `cp_${Date.now()}_${randomUUID().slice(0, 8)}`;
+
   try {
     const pspRes = await fetch(`${PSP_API_URL}/invoices`, {
       method: "POST",
@@ -140,12 +197,18 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         merchantId: "mrc_test_001",
-        orderId: orderId ?? `demo_${Date.now()}`,
-        fiatAmount: amount,
+        orderId: orderId ?? generatedOrderId,
+        orderDescription: "CryptoPay demo checkout",
+
+        fiatAmount,
         fiatCurrency,
         cryptoCurrency,
         network,
+
         expiresInMinutes: 10,
+
+        // optional: allow backend to build correct urls if it wants
+        clientOrigin: baseUrl,
       }),
     });
 
@@ -186,12 +249,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Keep backend paymentUrl only as a debug/supplementary field, never as navigation source
+    // backend url is allowed only as supplementary field
     const backendPaymentUrl =
       extractField<string>(data, ["paymentUrl", "payment_url"], undefined) ??
       undefined;
 
-    // ✅ Always return a hosted URL on THIS frontend origin
+    // ✅ always use our hosted route for navigation
     const hostedPaymentUrl = `${baseUrl}/open/pay/${encodeURIComponent(
       invoiceId
     )}`;
@@ -200,33 +263,36 @@ export async function POST(request: NextRequest) {
       {
         ok: true,
         invoiceId,
-        paymentUrl: hostedPaymentUrl, // ✅ safe & stable
-        network,
+        paymentUrl: hostedPaymentUrl,
 
-        amount:
-          extractField<number>(data, ["fiatAmount", "fiat_amount"], amount) ??
-          amount,
+        status: normalizeInvoiceStatus(
+          extractField(data, ["status"], "waiting")
+        ),
+        expiresAt: extractField<string>(
+          data,
+          ["expiresAt", "expires_at"],
+          undefined
+        ),
 
+        fiatAmount: (extractField<number>(
+          data,
+          ["fiatAmount", "fiat_amount"],
+          fiatAmount
+        ) ?? fiatAmount) as number,
         fiatCurrency: toUpperSafe(
           extractField(data, ["fiatCurrency", "fiat_currency"], fiatCurrency),
           fiatCurrency
         ),
 
-        cryptoCurrency: toUpperSafe(
-          extractField(
-            data,
-            ["cryptoCurrency", "crypto_currency"],
-            cryptoCurrency
-          ),
-          cryptoCurrency
+        // ✅ keep strict token type for frontend
+        cryptoCurrency,
+        cryptoAmount: extractField<number>(
+          data,
+          ["cryptoAmount", "crypto_amount"],
+          undefined
         ),
 
-        cryptoAmount:
-          extractField<number>(data, ["cryptoAmount", "crypto_amount"]) ??
-          undefined,
-
-        expiresAt:
-          extractField<string>(data, ["expiresAt", "expires_at"]) ?? undefined,
+        network,
 
         ...(DEBUG
           ? {
@@ -234,6 +300,7 @@ export async function POST(request: NextRequest) {
               backendPaymentUrl,
               pspApiUrl: PSP_API_URL,
               hasPspKey: Boolean(PSP_API_KEY),
+              generatedOrderId,
             }
           : {}),
       },

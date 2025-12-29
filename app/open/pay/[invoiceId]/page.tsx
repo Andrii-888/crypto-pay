@@ -12,13 +12,18 @@ type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
+type TxStatus = "pending" | "detected" | "confirmed";
+
 type StatusApiOk = {
   ok: true;
   invoiceId: string;
-  status: "waiting" | "confirmed" | "expired" | "rejected";
+  status: InvoiceStatus;
 
   createdAt?: string | null;
   expiresAt?: string | null;
+  paymentUrl?: string | null;
+  merchantId?: string | null;
 
   fiatAmount?: number | null;
   fiatCurrency?: string | null;
@@ -56,24 +61,40 @@ type StatusApiOk = {
   decisionReasonText?: string | null;
   decidedAt?: string | null;
   decidedBy?: string | null;
-
-  merchantId?: string | null;
-  paymentUrl?: string | null;
-
-  [key: string]: any;
 };
-
-type StatusApiErr = { ok: false; error?: string; details?: string };
-type StatusApiResponse = StatusApiOk | StatusApiErr;
 
 function normalizeParam(v: string | string[] | undefined) {
   if (!v) return "";
   return Array.isArray(v) ? String(v[0] ?? "") : String(v);
 }
 
+function isStatusApiOk(x: unknown): x is StatusApiOk {
+  if (!x || typeof x !== "object") return false;
+  return (x as { ok?: unknown }).ok === true;
+}
+
+function normalizeTxStatus(v?: string | null): TxStatus {
+  const s = String(v ?? "pending")
+    .trim()
+    .toLowerCase();
+  if (s === "confirmed") return "confirmed";
+  if (s === "detected") return "detected";
+  return "pending";
+}
+
+function strOrUndef(v?: string | null): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  return s.length ? s : undefined;
+}
+
+function numOrUndef(v?: number | null): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
 /**
  * ✅ Best practice for Vercel SSR:
- * - do NOT rely on NEXT_PUBLIC_SITE_URL here (often set to localhost)
+ * - do NOT rely on NEXT_PUBLIC_SITE_URL here
  * - build baseUrl from forwarded headers
  */
 async function getBaseUrlFromHeaders() {
@@ -97,10 +118,10 @@ async function fetchInvoiceSnapshot(
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) return null;
 
-  const data = (await res.json().catch(() => null)) as StatusApiResponse | null;
-  if (!data || (data as any).ok !== true) return null;
+  const data = (await res.json().catch(() => null)) as unknown;
+  if (!isStatusApiOk(data)) return null;
 
-  return data as StatusApiOk;
+  return data;
 }
 
 export async function generateMetadata({
@@ -140,87 +161,91 @@ export default async function PaymentPage({ params, searchParams }: PageProps) {
 
   const invoiceIdFromPath = String(p?.invoiceId ?? "").trim();
   const invoiceIdFromQuery = normalizeParam(sp.invoiceId).trim();
-
   const finalInvoiceId = invoiceIdFromPath || invoiceIdFromQuery;
 
-  if (!finalInvoiceId) {
-    return <NotFoundUI />;
-  }
+  if (!finalInvoiceId) return <NotFoundUI />;
 
-  // ✅ SSR fetch via our Next API
   const snap = await fetchInvoiceSnapshot(finalInvoiceId);
+  if (!snap) return <NotFoundUI invoiceId={finalInvoiceId} />;
 
-  if (!snap) {
-    return <NotFoundUI invoiceId={finalInvoiceId} />;
-  }
-
-  // Map snapshot -> InvoiceData for client UI (do not write nulls)
-  const initialInvoice = {
+  // Собираем InvoiceData аккуратно:
+  // - ключи со строгими типами НЕ получают null
+  // - если значения нет -> просто не добавляем поле (undefined)
+  const initialInvoice: InvoiceData = {
     invoiceId: snap.invoiceId ?? finalInvoiceId,
     status: snap.status ?? "waiting",
+    txStatus: normalizeTxStatus(snap.txStatus) as InvoiceData["txStatus"],
 
-    ...(snap.createdAt ? { createdAt: snap.createdAt } : {}),
-    ...(snap.expiresAt ? { expiresAt: snap.expiresAt } : {}),
+    // если в InvoiceData эти поля обязательные — оставляем безопасные дефолты:
+    paymentUrl: (strOrUndef(snap.paymentUrl) ??
+      "") as InvoiceData["paymentUrl"],
+    merchantId: (strOrUndef(snap.merchantId) ??
+      "") as InvoiceData["merchantId"],
 
-    ...(typeof snap.fiatAmount === "number"
-      ? { fiatAmount: snap.fiatAmount }
-      : {}),
-    ...(snap.fiatCurrency ? { fiatCurrency: snap.fiatCurrency } : {}),
+    createdAt: (strOrUndef(snap.createdAt) ??
+      undefined) as InvoiceData["createdAt"],
+    expiresAt: (strOrUndef(snap.expiresAt) ??
+      undefined) as InvoiceData["expiresAt"],
 
-    ...(typeof snap.cryptoAmount === "number"
-      ? { cryptoAmount: snap.cryptoAmount }
-      : {}),
-    ...(snap.cryptoCurrency ? { cryptoCurrency: snap.cryptoCurrency } : {}),
+    fiatAmount: (numOrUndef(snap.fiatAmount) ??
+      undefined) as InvoiceData["fiatAmount"],
+    fiatCurrency: (strOrUndef(snap.fiatCurrency) ??
+      undefined) as InvoiceData["fiatCurrency"],
 
-    ...(snap.network ? { network: snap.network } : {}),
+    cryptoAmount: (numOrUndef(snap.cryptoAmount) ??
+      undefined) as InvoiceData["cryptoAmount"],
+    cryptoCurrency: (strOrUndef(snap.cryptoCurrency) ??
+      undefined) as InvoiceData["cryptoCurrency"],
 
-    ...(typeof snap.grossAmount === "number"
-      ? { grossAmount: snap.grossAmount }
-      : {}),
-    ...(typeof snap.feeAmount === "number"
-      ? { feeAmount: snap.feeAmount }
-      : {}),
-    ...(typeof snap.netAmount === "number"
-      ? { netAmount: snap.netAmount }
-      : {}),
-    ...(typeof snap.feeBps === "number" ? { feeBps: snap.feeBps } : {}),
-    ...(snap.feePayer ? { feePayer: snap.feePayer } : {}),
+    network: (strOrUndef(snap.network) ?? undefined) as InvoiceData["network"],
 
-    ...(typeof snap.fxRate === "number" ? { fxRate: snap.fxRate } : {}),
-    ...(snap.fxPair ? { fxPair: snap.fxPair } : {}),
+    grossAmount: (numOrUndef(snap.grossAmount) ??
+      undefined) as InvoiceData["grossAmount"],
+    feeAmount: (numOrUndef(snap.feeAmount) ??
+      undefined) as InvoiceData["feeAmount"],
+    netAmount: (numOrUndef(snap.netAmount) ??
+      undefined) as InvoiceData["netAmount"],
+    feeBps: (numOrUndef(snap.feeBps) ?? undefined) as InvoiceData["feeBps"],
+    feePayer: (strOrUndef(snap.feePayer) ??
+      undefined) as InvoiceData["feePayer"],
 
-    txStatus: (snap.txStatus ?? "pending") as any,
-    ...(snap.txHash ? { txHash: snap.txHash } : {}),
-    ...(snap.walletAddress ? { walletAddress: snap.walletAddress } : {}),
-    ...(typeof snap.confirmations === "number"
-      ? { confirmations: snap.confirmations }
-      : {}),
-    ...(typeof snap.requiredConfirmations === "number"
-      ? { requiredConfirmations: snap.requiredConfirmations }
-      : {}),
+    fxRate: (numOrUndef(snap.fxRate) ?? undefined) as InvoiceData["fxRate"],
+    fxPair: (strOrUndef(snap.fxPair) ?? undefined) as InvoiceData["fxPair"],
 
-    ...(snap.detectedAt ? { detectedAt: snap.detectedAt } : {}),
-    ...(snap.confirmedAt ? { confirmedAt: snap.confirmedAt } : {}),
+    txHash: (strOrUndef(snap.txHash) ?? undefined) as InvoiceData["txHash"],
+    walletAddress: (strOrUndef(snap.walletAddress) ??
+      undefined) as InvoiceData["walletAddress"],
+    confirmations: (numOrUndef(snap.confirmations) ??
+      undefined) as InvoiceData["confirmations"],
+    requiredConfirmations: (numOrUndef(snap.requiredConfirmations) ??
+      undefined) as InvoiceData["requiredConfirmations"],
 
-    ...(snap.amlStatus ? { amlStatus: snap.amlStatus } : {}),
-    ...(typeof snap.riskScore === "number"
-      ? { riskScore: snap.riskScore }
-      : {}),
-    ...(snap.assetStatus ? { assetStatus: snap.assetStatus } : {}),
-    ...(typeof snap.assetRiskScore === "number"
-      ? { assetRiskScore: snap.assetRiskScore }
-      : {}),
+    detectedAt: (strOrUndef(snap.detectedAt) ??
+      undefined) as InvoiceData["detectedAt"],
+    confirmedAt: (strOrUndef(snap.confirmedAt) ??
+      undefined) as InvoiceData["confirmedAt"],
 
-    ...(snap.decisionStatus ? { decisionStatus: snap.decisionStatus } : {}),
-    ...(snap.decisionReasonCode
-      ? { decisionReasonCode: snap.decisionReasonCode }
-      : {}),
-    ...(snap.decisionReasonText
-      ? { decisionReasonText: snap.decisionReasonText }
-      : {}),
-    ...(snap.decidedAt ? { decidedAt: snap.decidedAt } : {}),
-    ...(snap.decidedBy ? { decidedBy: snap.decidedBy } : {}),
-  } as InvoiceData;
+    // ⬇️ ВАЖНО: никаких ?? null
+    amlStatus: (strOrUndef(snap.amlStatus) ??
+      undefined) as InvoiceData["amlStatus"],
+    riskScore: (numOrUndef(snap.riskScore) ??
+      undefined) as InvoiceData["riskScore"],
+    assetStatus: (strOrUndef(snap.assetStatus) ??
+      undefined) as InvoiceData["assetStatus"],
+    assetRiskScore: (numOrUndef(snap.assetRiskScore) ??
+      undefined) as InvoiceData["assetRiskScore"],
+
+    decisionStatus: (strOrUndef(snap.decisionStatus) ??
+      undefined) as InvoiceData["decisionStatus"],
+    decisionReasonCode: (strOrUndef(snap.decisionReasonCode) ??
+      undefined) as InvoiceData["decisionReasonCode"],
+    decisionReasonText: (strOrUndef(snap.decisionReasonText) ??
+      undefined) as InvoiceData["decisionReasonText"],
+    decidedAt: (strOrUndef(snap.decidedAt) ??
+      undefined) as InvoiceData["decidedAt"],
+    decidedBy: (strOrUndef(snap.decidedBy) ??
+      undefined) as InvoiceData["decidedBy"],
+  };
 
   return (
     <main className="min-h-screen bg-slate-50">

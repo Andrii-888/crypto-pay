@@ -51,24 +51,44 @@ type StatusApiOk = {
 
   merchantId?: string | null;
   paymentUrl?: string | null;
-
-  [key: string]: any;
 };
 
 type StatusApiErr = { ok: false; error?: string; details?: string };
-type StatusApiResponse = StatusApiOk | StatusApiErr;
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
 
 function normalizeStatus(s?: string | null): InvoiceStatus {
   return s === "waiting" ||
     s === "confirmed" ||
     s === "expired" ||
     s === "rejected"
-    ? (s as InvoiceStatus)
+    ? s
     : "waiting";
 }
 
 function isFinalStatus(s: InvoiceStatus) {
   return s === "confirmed" || s === "expired" || s === "rejected";
+}
+
+function isStatusApiOk(v: unknown): v is StatusApiOk {
+  if (!isObject(v)) return false;
+  if (v.ok !== true) return false;
+
+  const invoiceId = v.invoiceId;
+  const status = v.status;
+
+  if (typeof invoiceId !== "string" || !invoiceId.trim()) return false;
+  if (typeof status !== "string") return false;
+
+  const ns = normalizeStatus(status);
+  return ns === status;
+}
+
+function isStatusApiErr(v: unknown): v is StatusApiErr {
+  if (!isObject(v)) return false;
+  return v.ok === false;
 }
 
 function formatMoney(amount: number, currency: string) {
@@ -176,52 +196,64 @@ type InvoiceView = {
 function mergeInvoice(prev: InvoiceView, snap: StatusApiOk): InvoiceView {
   const next: InvoiceView = { ...prev };
 
-  const setIfDefined = <K extends keyof InvoiceView>(key: K, value: any) => {
-    if (value !== undefined && value !== null) (next as any)[key] = value;
+  const setIfDefined = <K extends keyof InvoiceView>(
+    key: K,
+    value: InvoiceView[K] | null | undefined
+  ) => {
+    if (value !== undefined && value !== null) {
+      next[key] = value;
+    }
   };
 
   setIfDefined("invoiceId", snap.invoiceId);
   setIfDefined("status", normalizeStatus(snap.status));
 
-  setIfDefined("createdAt", snap.createdAt);
-  setIfDefined("expiresAt", snap.expiresAt);
+  setIfDefined("createdAt", snap.createdAt ?? undefined);
+  setIfDefined("expiresAt", snap.expiresAt ?? undefined);
 
-  setIfDefined("fiatAmount", snap.fiatAmount);
-  setIfDefined("fiatCurrency", snap.fiatCurrency);
+  setIfDefined("fiatAmount", snap.fiatAmount ?? undefined);
+  setIfDefined("fiatCurrency", snap.fiatCurrency ?? undefined);
 
-  setIfDefined("cryptoAmount", snap.cryptoAmount);
-  setIfDefined("cryptoCurrency", snap.cryptoCurrency);
+  setIfDefined("cryptoAmount", snap.cryptoAmount ?? undefined);
+  setIfDefined("cryptoCurrency", snap.cryptoCurrency ?? undefined);
 
-  setIfDefined("network", snap.network);
+  setIfDefined("network", snap.network ?? undefined);
 
-  setIfDefined("txStatus", snap.txStatus ?? prev.txStatus ?? "pending");
-  setIfDefined("txHash", snap.txHash);
-  setIfDefined("walletAddress", snap.walletAddress);
+  // txStatus: keep previous if snap is null/undefined
+  const nextTxStatus =
+    (typeof snap.txStatus === "string" && snap.txStatus.trim()
+      ? snap.txStatus
+      : null) ??
+    prev.txStatus ??
+    "pending";
+  setIfDefined("txStatus", nextTxStatus);
+
+  setIfDefined("txHash", snap.txHash ?? undefined);
+  setIfDefined("walletAddress", snap.walletAddress ?? undefined);
 
   if (typeof snap.confirmations === "number")
     next.confirmations = snap.confirmations;
   if (typeof snap.requiredConfirmations === "number")
     next.requiredConfirmations = snap.requiredConfirmations;
 
-  setIfDefined("detectedAt", snap.detectedAt);
-  setIfDefined("confirmedAt", snap.confirmedAt);
+  setIfDefined("detectedAt", snap.detectedAt ?? undefined);
+  setIfDefined("confirmedAt", snap.confirmedAt ?? undefined);
 
-  setIfDefined("amlStatus", snap.amlStatus);
-  setIfDefined("riskScore", snap.riskScore);
+  setIfDefined("amlStatus", snap.amlStatus ?? undefined);
+  if (typeof snap.riskScore === "number") next.riskScore = snap.riskScore;
 
-  setIfDefined("decisionStatus", snap.decisionStatus);
-  setIfDefined("decisionReasonText", snap.decisionReasonText);
+  setIfDefined("decisionStatus", snap.decisionStatus ?? undefined);
+  setIfDefined("decisionReasonText", snap.decisionReasonText ?? undefined);
 
   return next;
 }
 
-export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
-  const id = (invoiceId ?? "").trim();
-
-  const [invoice, setInvoice] = useState<InvoiceView | null>(() => {
-    if (!id) return null;
-    return { invoiceId: id, status: "waiting", txStatus: "pending" };
-  });
+function SuccessInner({ id }: { id: string }) {
+  const [invoice, setInvoice] = useState<InvoiceView>(() => ({
+    invoiceId: id,
+    status: "waiting",
+    txStatus: "pending",
+  }));
 
   const [error, setError] = useState<string | null>(null);
 
@@ -230,21 +262,15 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
 
   useEffect(() => {
     if (!id) return;
-
-    // reset if invoiceId changed
-    setInvoice({ invoiceId: id, status: "waiting", txStatus: "pending" });
-    setError(null);
-    statusRef.current = "waiting";
-    startedRef.current = false;
-  }, [id]);
-
-  useEffect(() => {
-    if (!id) return;
     if (startedRef.current) return;
     startedRef.current = true;
 
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      timeoutId = setTimeout(tick, 2500);
+    };
 
     const tick = async () => {
       if (cancelled) return;
@@ -258,36 +284,39 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
 
         if (!res.ok) {
           setError(`HTTP ${res.status}`);
-        } else {
-          const data = (await res
-            .json()
-            .catch(() => null)) as StatusApiResponse | null;
-
-          if (data && (data as any).ok === true) {
-            const snap = data as StatusApiOk;
-
-            setInvoice((prev) => {
-              const base: InvoiceView = prev ?? {
-                invoiceId: snap.invoiceId ?? id,
-                status: "waiting",
-                txStatus: "pending",
-              };
-              return mergeInvoice(base, snap);
-            });
-
-            const nextStatus = normalizeStatus(snap.status);
-            statusRef.current = nextStatus;
-
-            if (isFinalStatus(nextStatus)) return;
-          } else if (data && (data as any).ok === false) {
-            setError((data as StatusApiErr).error ?? "API error");
-          }
+          schedule();
+          return;
         }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Fetch failed");
-      }
 
-      timeoutId = setTimeout(tick, 2500);
+        const data: unknown = await res.json().catch(() => null);
+
+        if (isStatusApiOk(data)) {
+          const snap = data;
+
+          setInvoice((prev) => mergeInvoice(prev, snap));
+
+          const nextStatus = normalizeStatus(snap.status);
+          statusRef.current = nextStatus;
+
+          if (isFinalStatus(nextStatus)) return;
+
+          setError(null);
+          schedule();
+          return;
+        }
+
+        if (isStatusApiErr(data)) {
+          setError(data.error ?? "API error");
+          schedule();
+          return;
+        }
+
+        setError("Invalid API response");
+        schedule();
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Fetch failed");
+        schedule();
+      }
     };
 
     void tick();
@@ -299,18 +328,18 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
     };
   }, [id]);
 
-  const ui = statusUi(invoice?.status);
+  const ui = statusUi(invoice.status);
 
-  const requiredConfs = invoice?.requiredConfirmations ?? 1;
-  const confs = invoice?.confirmations ?? 0;
+  const requiredConfs = invoice.requiredConfirmations ?? 1;
+  const confs = invoice.confirmations ?? 0;
 
   const showAml = useMemo(() => {
     return (
-      Boolean(invoice?.amlStatus) ||
-      typeof invoice?.riskScore === "number" ||
-      Boolean(invoice?.decisionStatus)
+      Boolean(invoice.amlStatus) ||
+      typeof invoice.riskScore === "number" ||
+      Boolean(invoice.decisionStatus)
     );
-  }, [invoice?.amlStatus, invoice?.riskScore, invoice?.decisionStatus]);
+  }, [invoice.amlStatus, invoice.riskScore, invoice.decisionStatus]);
 
   return (
     <>
@@ -342,7 +371,7 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Invoice</span>
           <span className="font-mono text-[11px] text-slate-900 truncate max-w-[60%]">
-            {id || "—"}
+            {id}
           </span>
         </div>
 
@@ -359,9 +388,7 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Fiat amount</span>
           <span className="text-slate-900 tabular-nums">
-            {invoice &&
-            typeof invoice.fiatAmount === "number" &&
-            invoice.fiatCurrency
+            {typeof invoice.fiatAmount === "number" && invoice.fiatCurrency
               ? formatMoney(invoice.fiatAmount, invoice.fiatCurrency)
               : "—"}
           </span>
@@ -370,9 +397,7 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Crypto amount</span>
           <span className="text-slate-900 tabular-nums">
-            {invoice &&
-            typeof invoice.cryptoAmount === "number" &&
-            invoice.cryptoCurrency
+            {typeof invoice.cryptoAmount === "number" && invoice.cryptoCurrency
               ? formatMoney(invoice.cryptoAmount, invoice.cryptoCurrency)
               : "—"}
           </span>
@@ -380,15 +405,8 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
 
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Network</span>
-          <span className="text-slate-900">{invoice?.network ?? "—"}</span>
+          <span className="text-slate-900">{invoice.network ?? "—"}</span>
         </div>
-
-        {!id ? (
-          <p className="pt-1 text-[11px] text-slate-400">
-            Tip: open this page as{" "}
-            <span className="font-mono">/open/pay/success?invoiceId=...</span>
-          </p>
-        ) : null}
       </section>
 
       <section className="mt-4 rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-2">
@@ -397,7 +415,7 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
           <span className="text-[11px] text-slate-500">
             Status:{" "}
             <span className="font-mono text-slate-900">
-              {invoice?.txStatus ?? "pending"}
+              {invoice.txStatus ?? "pending"}
             </span>
           </span>
         </div>
@@ -406,14 +424,14 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
           <div className="flex items-start gap-2">
             <span className="w-28 shrink-0 text-slate-500">txHash</span>
             <span className="font-mono break-all text-slate-900">
-              {invoice?.txHash ?? "—"}
+              {invoice.txHash ?? "—"}
             </span>
           </div>
 
           <div className="flex items-start gap-2">
             <span className="w-28 shrink-0 text-slate-500">Wallet</span>
             <span className="font-mono break-all text-slate-900">
-              {invoice?.walletAddress ?? "—"}
+              {invoice.walletAddress ?? "—"}
             </span>
           </div>
 
@@ -426,14 +444,12 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
 
           <div className="flex items-start gap-2">
             <span className="w-28 shrink-0 text-slate-500">Detected</span>
-            <span className="text-slate-900">{fmtTs(invoice?.detectedAt)}</span>
+            <span className="text-slate-900">{fmtTs(invoice.detectedAt)}</span>
           </div>
 
           <div className="flex items-start gap-2">
             <span className="w-28 shrink-0 text-slate-500">Confirmed</span>
-            <span className="text-slate-900">
-              {fmtTs(invoice?.confirmedAt)}
-            </span>
+            <span className="text-slate-900">{fmtTs(invoice.confirmedAt)}</span>
           </div>
         </div>
       </section>
@@ -448,14 +464,14 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
             <div className="flex items-start gap-2">
               <span className="w-28 shrink-0 text-slate-500">AML</span>
               <span className="font-mono text-slate-900">
-                {invoice?.amlStatus ?? "—"}
+                {invoice.amlStatus ?? "—"}
               </span>
             </div>
 
             <div className="flex items-start gap-2">
               <span className="w-28 shrink-0 text-slate-500">Risk</span>
               <span className="font-mono text-slate-900">
-                {typeof invoice?.riskScore === "number"
+                {typeof invoice.riskScore === "number"
                   ? invoice.riskScore
                   : "—"}
               </span>
@@ -464,11 +480,11 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
             <div className="flex items-start gap-2">
               <span className="w-28 shrink-0 text-slate-500">Decision</span>
               <span className="font-mono text-slate-900">
-                {invoice?.decisionStatus ?? "—"}
+                {invoice.decisionStatus ?? "—"}
               </span>
             </div>
 
-            {invoice?.decisionReasonText ? (
+            {invoice.decisionReasonText ? (
               <div className="pt-1 text-[11px] text-slate-600">
                 {invoice.decisionReasonText}
               </div>
@@ -478,4 +494,37 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
       ) : null}
     </>
   );
+}
+
+export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
+  const id = (invoiceId ?? "").trim();
+
+  if (!id) {
+    const ui = statusUi(undefined);
+    return (
+      <>
+        <header className="mb-6 text-center">
+          <div
+            className={`mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full ${ui.iconBg}`}
+          >
+            <span className={`text-base font-semibold ${ui.iconText}`}>
+              {ui.icon}
+            </span>
+          </div>
+
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            {ui.title}
+          </h1>
+
+          <p className="mt-2 max-w-sm mx-auto text-xs text-slate-500">
+            Tip: open this page as{" "}
+            <span className="font-mono">/open/pay/success?invoiceId=...</span>
+          </p>
+        </header>
+      </>
+    );
+  }
+
+  // ✅ key forces a clean re-mount when invoiceId changes (no “reset setState in effect” needed)
+  return <SuccessInner key={id} id={id} />;
 }
