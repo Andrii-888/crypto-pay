@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import type { InvoiceStatus, InvoiceView } from "./success.types";
 import { DebugPanel, fmtTs, formatMoney, statusUi, KVRow } from "./success.ui";
 
@@ -97,19 +96,12 @@ function normalizeTxStatus(v: unknown): InvoiceView["txStatus"] {
   return "pending";
 }
 
-function asString(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim();
-  return s.length ? s : null;
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
 }
 
-function asNumber(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
+function asNumber(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
 function extractInvoicePatch(data: StatusResponseOk): Partial<InvoiceView> {
@@ -128,13 +120,13 @@ function extractInvoicePatch(data: StatusResponseOk): Partial<InvoiceView> {
 
     fees: data.fees
       ? {
-          grossAmount: asNumber(data.fees.grossAmount),
-          feeAmount: asNumber(data.fees.feeAmount),
-          netAmount: asNumber(data.fees.netAmount),
-          feeBps: asNumber(data.fees.feeBps),
-          feePayer: asString(data.fees.feePayer),
+          grossAmount: asNumber(data.fees.grossAmount) ?? null,
+          feeAmount: asNumber(data.fees.feeAmount) ?? null,
+          netAmount: asNumber(data.fees.netAmount) ?? null,
+          feeBps: asNumber(data.fees.feeBps) ?? null,
+          feePayer: asString(data.fees.feePayer) ?? null,
         }
-      : null,
+      : undefined,
 
     fxRate: asNumber(data.fxRate),
     fxPair: asString(data.fxPair),
@@ -142,7 +134,7 @@ function extractInvoicePatch(data: StatusResponseOk): Partial<InvoiceView> {
     network: asString(data.network),
 
     walletAddress: asString(data.walletAddress),
-    txHash: asString(data.txHash),
+    txHash: asString(data.txHash) ?? null,
 
     confirmations: asNumber(data.confirmations),
     requiredConfirmations: asNumber(data.requiredConfirmations),
@@ -164,9 +156,17 @@ function extractInvoicePatch(data: StatusResponseOk): Partial<InvoiceView> {
   };
 }
 
-function SuccessInner({ id }: { id: string }) {
-  const searchParams = useSearchParams();
+function isFinalStatus(s: InvoiceStatus) {
+  return s === "confirmed" || s === "expired" || s === "rejected";
+}
 
+function SuccessInner({
+  id,
+  debugEnabled,
+}: {
+  id: string;
+  debugEnabled: boolean;
+}) {
   const [invoice, setInvoice] = useState<InvoiceView>(() => ({
     invoiceId: id,
     status: "waiting",
@@ -198,8 +198,7 @@ function SuccessInner({ id }: { id: string }) {
     const tick = async () => {
       if (cancelled) return;
 
-      // stop polling when final
-      if (statusRef.current !== "waiting") return;
+      if (isFinalStatus(statusRef.current)) return;
 
       try {
         const res = await fetch(
@@ -240,9 +239,7 @@ function SuccessInner({ id }: { id: string }) {
 
         setError(null);
 
-        if (nextStatus !== "waiting") return;
-
-        schedule();
+        if (!isFinalStatus(nextStatus)) schedule();
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Fetch failed");
         schedule();
@@ -270,13 +267,6 @@ function SuccessInner({ id }: { id: string }) {
     );
   }, [invoice.amlStatus, invoice.riskScore, invoice.decisionStatus]);
 
-  // ✅ Debug is hidden in production unless explicitly enabled
-  const debugParam = (searchParams.get("debug") ?? "").trim();
-  const debugEnabled =
-    process.env.NODE_ENV !== "production" ||
-    debugParam === "1" ||
-    process.env.NEXT_PUBLIC_CRYPTO_PAY_DEBUG === "1";
-
   return (
     <>
       <header className="mb-6 text-center">
@@ -303,7 +293,6 @@ function SuccessInner({ id }: { id: string }) {
         ) : null}
       </header>
 
-      {/* Summary */}
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Invoice</span>
@@ -346,7 +335,6 @@ function SuccessInner({ id }: { id: string }) {
         </div>
       </section>
 
-      {/* Transaction */}
       <section className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-900">Transaction</h3>
@@ -382,7 +370,6 @@ function SuccessInner({ id }: { id: string }) {
         </div>
       </section>
 
-      {/* AML */}
       {showAml ? (
         <section className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h3 className="text-sm font-semibold text-slate-900">
@@ -408,7 +395,6 @@ function SuccessInner({ id }: { id: string }) {
         </section>
       ) : null}
 
-      {/* Debug */}
       {debugEnabled ? (
         <DebugPanel
           open={debugOpen}
@@ -420,8 +406,17 @@ function SuccessInner({ id }: { id: string }) {
   );
 }
 
-export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
+export default function ClientSuccess({
+  invoiceId,
+  debug,
+}: {
+  invoiceId: string;
+  debug?: string;
+}) {
   const id = (invoiceId ?? "").trim();
+
+  const debugEnabled =
+    debug === "1" || process.env.NEXT_PUBLIC_CP_DEBUG === "1";
 
   if (!id) {
     const ui = statusUi(undefined);
@@ -448,5 +443,5 @@ export default function ClientSuccess({ invoiceId }: { invoiceId: string }) {
     );
   }
 
-  return <SuccessInner key={id} id={id} />;
+  return <SuccessInner key={id} id={id} debugEnabled={debugEnabled} />;
 }
