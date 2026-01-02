@@ -1,18 +1,29 @@
 // app/api/payments/status/route.ts
 import { NextResponse } from "next/server";
 
-const BUILD_STAMP = "status-route-v3-2026-01-02__M1";
+const BUILD_STAMP = "status-route-v4-2026-01-02__S1";
 
 const PSP_API_URL = (process.env.PSP_API_URL ?? "").replace(/\/+$/, "");
 const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
 const PSP_MERCHANT_ID = (process.env.PSP_MERCHANT_ID ?? "").trim();
 
+// set to "1" to enable verbose logs locally
+const STATUS_DEBUG = (process.env.STATUS_DEBUG ?? "").trim() === "1";
+
 type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
+
+type Fees = {
+  grossAmount?: number | null;
+  feeAmount?: number | null;
+  netAmount?: number | null;
+  feeBps?: number | null;
+  feePayer?: string | null;
+};
 
 type OkResponse = {
   ok: true;
 
-  // debug
+  // debug/meta
   buildStamp?: string;
 
   // required
@@ -31,7 +42,7 @@ type OkResponse = {
   cryptoAmount?: number | null;
   cryptoCurrency?: string | null;
 
-  // fees/fx
+  // fees/fx (flattened for UI convenience)
   grossAmount?: number | null;
   feeAmount?: number | null;
   netAmount?: number | null;
@@ -68,12 +79,60 @@ type ErrResponse = {
   error: string;
   details?: string;
   pspApiUrl?: string;
+  invoiceId?: string;
+  buildStamp?: string;
 };
 
 type JsonObject = Record<string, unknown>;
 
+function isObject(v: unknown): v is JsonObject {
+  return !!v && typeof v === "object";
+}
+
 function asObject(v: unknown): JsonObject {
-  return v && typeof v === "object" ? (v as JsonObject) : {};
+  return isObject(v) ? v : {};
+}
+
+function strOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s.length ? s : null;
+}
+
+function numOrNull(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function normalizeInvoiceStatus(raw: unknown): InvoiceStatus {
+  const s = String(raw ?? "waiting")
+    .trim()
+    .toLowerCase();
+  if (s === "confirmed") return "confirmed";
+  if (s === "expired") return "expired";
+  if (s === "rejected") return "rejected";
+  return "waiting";
+}
+
+function pickFees(raw: unknown): Fees {
+  // PSP may return either:
+  // - flat: grossAmount/feeAmount/netAmount/feeBps/feePayer
+  // - nested: fees: { grossAmount, ... }
+  const o = asObject(raw);
+
+  const feesObj = asObject(o.fees);
+  const grossAmount =
+    numOrNull(feesObj.grossAmount) ?? numOrNull(o.grossAmount);
+  const feeAmount = numOrNull(feesObj.feeAmount) ?? numOrNull(o.feeAmount);
+  const netAmount = numOrNull(feesObj.netAmount) ?? numOrNull(o.netAmount);
+  const feeBps = numOrNull(feesObj.feeBps) ?? numOrNull(o.feeBps);
+  const feePayer = strOrNull(feesObj.feePayer) ?? strOrNull(o.feePayer);
+
+  return { grossAmount, feeAmount, netAmount, feeBps, feePayer };
 }
 
 async function safeReadBody(res: Response): Promise<string | undefined> {
@@ -86,32 +145,32 @@ async function safeReadBody(res: Response): Promise<string | undefined> {
   return text ? text.slice(0, 800) : undefined;
 }
 
-function normalizeInvoiceStatus(raw: unknown): InvoiceStatus {
-  const s = String(raw ?? "waiting").toLowerCase();
-  if (
-    s === "confirmed" ||
-    s === "expired" ||
-    s === "rejected" ||
-    s === "waiting"
-  ) {
-    return s as InvoiceStatus;
+function envGuard(): ErrResponse | null {
+  if (!PSP_API_URL) {
+    return {
+      ok: false,
+      error: "PSP_API_URL is empty",
+      details: "Set PSP_API_URL in .env.local and restart",
+      buildStamp: BUILD_STAMP,
+    };
   }
-  return "waiting";
-}
-
-function numOrNull(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+  if (!PSP_API_KEY) {
+    return {
+      ok: false,
+      error: "PSP_API_KEY is empty",
+      details: "Set PSP_API_KEY in .env.local and restart",
+      buildStamp: BUILD_STAMP,
+    };
+  }
+  if (!PSP_MERCHANT_ID) {
+    return {
+      ok: false,
+      error: "PSP_MERCHANT_ID is empty",
+      details: "Set PSP_MERCHANT_ID in .env.local and restart",
+      buildStamp: BUILD_STAMP,
+    };
   }
   return null;
-}
-
-function strOrNull(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim();
-  return s.length ? s : null;
 }
 
 export async function GET(req: Request) {
@@ -119,36 +178,16 @@ export async function GET(req: Request) {
   const invoiceId = (searchParams.get("invoiceId") ?? "").trim();
 
   if (!invoiceId) {
-    const res: ErrResponse = { ok: false, error: "Missing invoiceId" };
+    const res: ErrResponse = {
+      ok: false,
+      error: "Missing invoiceId",
+      buildStamp: BUILD_STAMP,
+    };
     return NextResponse.json(res, { status: 400 });
   }
 
-  if (!PSP_API_URL) {
-    const res: ErrResponse = {
-      ok: false,
-      error: "PSP_API_URL is empty",
-      details: "Set PSP_API_URL in .env.local and restart",
-    };
-    return NextResponse.json(res, { status: 500 });
-  }
-
-  if (!PSP_API_KEY) {
-    const res: ErrResponse = {
-      ok: false,
-      error: "PSP_API_KEY is empty",
-      details: "Set PSP_API_KEY in .env.local and restart",
-    };
-    return NextResponse.json(res, { status: 500 });
-  }
-
-  if (!PSP_MERCHANT_ID) {
-    const res: ErrResponse = {
-      ok: false,
-      error: "PSP_MERCHANT_ID is empty",
-      details: "Set PSP_MERCHANT_ID in .env.local and restart",
-    };
-    return NextResponse.json(res, { status: 500 });
-  }
+  const envErr = envGuard();
+  if (envErr) return NextResponse.json(envErr, { status: 500 });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -156,11 +195,13 @@ export async function GET(req: Request) {
   try {
     const url = `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`;
 
-    console.log("[status] PSP_API_URL =", PSP_API_URL);
-    console.log("[status] PSP_MERCHANT_ID =", PSP_MERCHANT_ID);
-    console.log("[status] PSP_API_KEY_len =", PSP_API_KEY.length);
-    console.log("[status] invoiceId =", invoiceId);
-    console.log("[status] BUILD_STAMP =", BUILD_STAMP);
+    if (STATUS_DEBUG) {
+      console.log("[status] PSP_API_URL =", PSP_API_URL);
+      console.log("[status] PSP_MERCHANT_ID =", PSP_MERCHANT_ID);
+      console.log("[status] PSP_API_KEY_len =", PSP_API_KEY.length);
+      console.log("[status] invoiceId =", invoiceId);
+      console.log("[status] BUILD_STAMP =", BUILD_STAMP);
+    }
 
     const pspRes = await fetch(url, {
       cache: "no-store",
@@ -179,12 +220,15 @@ export async function GET(req: Request) {
         error: `PSP responded ${pspRes.status}`,
         details,
         pspApiUrl: PSP_API_URL,
+        invoiceId,
+        buildStamp: BUILD_STAMP,
       };
       return NextResponse.json(res, { status: 502 });
     }
 
     const raw = (await pspRes.json().catch(() => ({}))) as unknown;
     const data = asObject(raw);
+    const fees = pickFees(data);
 
     const res: OkResponse = {
       ok: true,
@@ -203,11 +247,12 @@ export async function GET(req: Request) {
       cryptoAmount: numOrNull(data.cryptoAmount),
       cryptoCurrency: strOrNull(data.cryptoCurrency),
 
-      grossAmount: numOrNull(data.grossAmount),
-      feeAmount: numOrNull(data.feeAmount),
-      netAmount: numOrNull(data.netAmount),
-      feeBps: numOrNull(data.feeBps),
-      feePayer: strOrNull(data.feePayer),
+      grossAmount: fees.grossAmount ?? null,
+      feeAmount: fees.feeAmount ?? null,
+      netAmount: fees.netAmount ?? null,
+      feeBps: fees.feeBps ?? null,
+      feePayer: fees.feePayer ?? null,
+
       fxRate: numOrNull(data.fxRate),
       fxPair: strOrNull(data.fxPair),
 
@@ -236,16 +281,14 @@ export async function GET(req: Request) {
     out.headers.set("Cache-Control", "no-store");
     return out;
   } catch (e: unknown) {
-    const err =
-      e instanceof Error && e.name === "AbortError"
-        ? "PSP timeout"
-        : "Fetch failed";
-
+    const isTimeout = e instanceof Error && e.name === "AbortError";
     const res: ErrResponse = {
       ok: false,
-      error: err,
+      error: isTimeout ? "PSP timeout" : "Fetch failed",
       details: e instanceof Error ? e.message : "Unknown error",
       pspApiUrl: PSP_API_URL,
+      invoiceId,
+      buildStamp: BUILD_STAMP,
     };
     return NextResponse.json(res, { status: 502 });
   } finally {
