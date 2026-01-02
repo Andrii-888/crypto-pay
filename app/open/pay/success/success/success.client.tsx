@@ -1,19 +1,70 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { InvoiceStatus, InvoiceView, StatusApiOk } from "./success.types";
-import {
-  normalizeInvoiceStatus,
-  normalizeInvoiceView,
-  normalizeTxStatus,
-} from "./success.logic";
+import { useSearchParams } from "next/navigation";
+import type { InvoiceStatus, InvoiceView } from "./success.types";
 import { DebugPanel, fmtTs, formatMoney, statusUi, KVRow } from "./success.ui";
+
+type StatusResponseOk = {
+  ok: true;
+  invoiceId: string;
+  status: unknown;
+  txStatus?: unknown;
+
+  createdAt?: unknown;
+  expiresAt?: unknown;
+  paymentUrl?: unknown;
+
+  merchantId?: unknown;
+
+  fiatAmount?: unknown;
+  fiatCurrency?: unknown;
+
+  cryptoAmount?: unknown;
+  cryptoCurrency?: unknown;
+
+  fees?: {
+    grossAmount?: unknown;
+    feeAmount?: unknown;
+    netAmount?: unknown;
+    feeBps?: unknown;
+    feePayer?: unknown;
+  } | null;
+
+  fxRate?: unknown;
+  fxPair?: unknown;
+
+  network?: unknown;
+
+  txHash?: unknown;
+  walletAddress?: unknown;
+
+  confirmations?: unknown;
+  requiredConfirmations?: unknown;
+
+  detectedAt?: unknown;
+  confirmedAt?: unknown;
+
+  amlStatus?: unknown;
+  riskScore?: unknown;
+
+  assetStatus?: unknown;
+  assetRiskScore?: unknown;
+
+  decisionStatus?: unknown;
+  decisionReasonCode?: unknown;
+  decisionReasonText?: unknown;
+  decidedAt?: unknown;
+  decidedBy?: unknown;
+
+  [k: string]: unknown;
+};
 
 function isObject(x: unknown): x is Record<string, unknown> {
   return !!x && typeof x === "object";
 }
 
-function isStatusOk(x: unknown): x is StatusApiOk {
+function isStatusOk(x: unknown): x is StatusResponseOk {
   if (!isObject(x)) return false;
   return x.ok === true && typeof x.invoiceId === "string";
 }
@@ -27,7 +78,95 @@ function getErrorMessage(x: unknown): string | null {
   return null;
 }
 
+function normalizeInvoiceStatus(v: unknown): InvoiceStatus {
+  const s = String(v ?? "waiting")
+    .trim()
+    .toLowerCase();
+  if (s === "confirmed") return "confirmed";
+  if (s === "expired") return "expired";
+  if (s === "rejected") return "rejected";
+  return "waiting";
+}
+
+function normalizeTxStatus(v: unknown): InvoiceView["txStatus"] {
+  const s = String(v ?? "pending")
+    .trim()
+    .toLowerCase();
+  if (s === "confirmed") return "confirmed";
+  if (s === "detected") return "detected";
+  return "pending";
+}
+
+function asString(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s.length ? s : null;
+}
+
+function asNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function extractInvoicePatch(data: StatusResponseOk): Partial<InvoiceView> {
+  return {
+    createdAt: asString(data.createdAt),
+    expiresAt: asString(data.expiresAt),
+    paymentUrl: asString(data.paymentUrl),
+
+    merchantId: asString(data.merchantId),
+
+    fiatAmount: asNumber(data.fiatAmount),
+    fiatCurrency: asString(data.fiatCurrency),
+
+    cryptoAmount: asNumber(data.cryptoAmount),
+    cryptoCurrency: asString(data.cryptoCurrency),
+
+    fees: data.fees
+      ? {
+          grossAmount: asNumber(data.fees.grossAmount),
+          feeAmount: asNumber(data.fees.feeAmount),
+          netAmount: asNumber(data.fees.netAmount),
+          feeBps: asNumber(data.fees.feeBps),
+          feePayer: asString(data.fees.feePayer),
+        }
+      : null,
+
+    fxRate: asNumber(data.fxRate),
+    fxPair: asString(data.fxPair),
+
+    network: asString(data.network),
+
+    walletAddress: asString(data.walletAddress),
+    txHash: asString(data.txHash),
+
+    confirmations: asNumber(data.confirmations),
+    requiredConfirmations: asNumber(data.requiredConfirmations),
+
+    detectedAt: asString(data.detectedAt),
+    confirmedAt: asString(data.confirmedAt),
+
+    amlStatus: asString(data.amlStatus),
+    riskScore: asNumber(data.riskScore),
+
+    assetStatus: asString(data.assetStatus),
+    assetRiskScore: asNumber(data.assetRiskScore),
+
+    decisionStatus: asString(data.decisionStatus),
+    decisionReasonCode: asString(data.decisionReasonCode),
+    decisionReasonText: asString(data.decisionReasonText),
+    decidedAt: asString(data.decidedAt),
+    decidedBy: asString(data.decidedBy),
+  };
+}
+
 function SuccessInner({ id }: { id: string }) {
+  const searchParams = useSearchParams();
+
   const [invoice, setInvoice] = useState<InvoiceView>(() => ({
     invoiceId: id,
     status: "waiting",
@@ -59,7 +198,7 @@ function SuccessInner({ id }: { id: string }) {
     const tick = async () => {
       if (cancelled) return;
 
-      // stop polling only when we already have a final status
+      // stop polling when final
       if (statusRef.current !== "waiting") return;
 
       try {
@@ -70,62 +209,30 @@ function SuccessInner({ id }: { id: string }) {
 
         const data: unknown = await res.json().catch(() => null);
 
-        // ✅ ALWAYS store snapshot (even if ok:false or invalid shape)
-        setDebugInvoice(data);
-
-        // Debug (browser)
-        console.log("[SUCCESS][status raw]", data);
-
-        const d = isObject(data) ? data : {};
-        console.log("[SUCCESS][http]", {
-          ok: res.ok,
-          status: res.status,
-          statusText: res.statusText,
-        });
-        console.log("[SUCCESS][key fields]", {
-          ok: d.ok,
-          invoiceId: d.invoiceId,
-          status: d.status,
-          txStatus: d.txStatus,
-          walletAddress: d.walletAddress,
-          txHash: d.txHash,
-          network: d.network,
-          fiatAmount: d.fiatAmount,
-          fiatCurrency: d.fiatCurrency,
-          cryptoAmount: d.cryptoAmount,
-          cryptoCurrency: d.cryptoCurrency,
-          fees: d.fees,
-          grossAmount: d.grossAmount,
-          feeAmount: d.feeAmount,
-          netAmount: d.netAmount,
-        });
-
-        // if HTTP failed — show best error we can and keep polling
         if (!res.ok) {
           setError(getErrorMessage(data) ?? `HTTP ${res.status}`);
           schedule();
           return;
         }
 
-        // not ok-shape — keep polling
         if (!isStatusOk(data)) {
           setError(getErrorMessage(data) ?? "Invalid API response");
           schedule();
           return;
         }
 
-        // Normalize to UI view (handles nested+flat fees, numbers-as-strings, etc.)
-        const nextView = normalizeInvoiceView(data);
+        setDebugInvoice(data);
 
-        // Ensure status/txStatus are normalized to known states
         const nextStatus = normalizeInvoiceStatus(data.status);
         const nextTxStatus = normalizeTxStatus(data.txStatus);
 
         statusRef.current = nextStatus;
 
+        const patch = extractInvoicePatch(data);
+
         setInvoice((prev) => ({
           ...prev,
-          ...nextView,
+          ...patch,
           invoiceId: id,
           status: nextStatus,
           txStatus: nextTxStatus,
@@ -163,7 +270,12 @@ function SuccessInner({ id }: { id: string }) {
     );
   }, [invoice.amlStatus, invoice.riskScore, invoice.decisionStatus]);
 
-  const debugEnabled = process.env.NODE_ENV !== "production";
+  // ✅ Debug is hidden in production unless explicitly enabled
+  const debugParam = (searchParams.get("debug") ?? "").trim();
+  const debugEnabled =
+    process.env.NODE_ENV !== "production" ||
+    debugParam === "1" ||
+    process.env.NEXT_PUBLIC_CRYPTO_PAY_DEBUG === "1";
 
   return (
     <>
