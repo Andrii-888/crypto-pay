@@ -97,9 +97,10 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: amountToSend,
-          fiatCurrency: "EUR",
-          cryptoCurrency: token,
-          network: safeNetwork,
+          currency: "EUR",
+          asset: token,
+          network: safeNetwork.toLowerCase(),
+          description: "checkout demo",
         }),
       });
 

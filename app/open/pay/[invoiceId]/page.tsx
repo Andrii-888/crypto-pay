@@ -92,25 +92,17 @@ function numOrUndef(v?: number | null): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
-/**
- * ✅ Best practice for Vercel SSR:
- * - do NOT rely on NEXT_PUBLIC_SITE_URL here
- * - build baseUrl from forwarded headers
- */
-async function getBaseUrlFromHeaders() {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") || h.get("host");
-  const proto = h.get("x-forwarded-proto") || "https";
-  if (!host) return "http://localhost:3000";
-  return `${proto}://${host}`.replace(/\/+$/, "");
-}
-
 async function fetchInvoiceSnapshot(
   invoiceId: string
 ): Promise<StatusApiOk | null> {
   if (!invoiceId) return null;
 
-  const baseUrl = await getBaseUrlFromHeaders();
+  const h = await headers();
+  const host = h.get("x-forwarded-host") || h.get("host");
+  const proto = h.get("x-forwarded-proto") || "http";
+
+  const baseUrl = host ? `${proto}://${host}` : "http://localhost:3000";
+
   const url = `${baseUrl}/api/payments/status?invoiceId=${encodeURIComponent(
     invoiceId
   )}`;

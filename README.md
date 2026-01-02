@@ -1,4 +1,5 @@
 🟦 Crypto Pay
+
 Premium Crypto Checkout · Demo Ecommerce Integration
 
 A modern, high-end crypto checkout experience powered by a Swiss-regulated PSP.
@@ -6,39 +7,39 @@ Designed for real online stores, premium brands, and fintech platforms.
 
 ✨ Overview
 
-Crypto Pay is a demo ecommerce integration showcasing how crypto payments (USDT / USDC) can be accepted in a clean, compliant and production-ready way, without merchants ever touching blockchain complexity.
+Crypto Pay is a demo ecommerce integration showcasing how crypto payments (USDT / USDC) can be accepted in a clean, compliant, production-ready way — without merchants ever touching blockchain complexity.
 
-The project demonstrates a full end-to-end payment flow:
+This project demonstrates an end-to-end payment flow:
 
-premium ecommerce UI
+Premium ecommerce UI
 
-shopping cart & checkout
+Shopping cart & checkout
 
-invoice creation
+Invoice creation (server-side)
 
-hosted crypto payment page
+Hosted crypto payment page (Stripe-like)
 
-real-time status updates
+Real-time status updates (polling)
 
 PSP-grade architecture, ready for production
 
 💡 This is not a mock UI.
-The architecture mirrors how real PSPs operate (invoice lifecycle, webhooks, confirmations, AML hooks).
+The architecture mirrors how real PSPs operate: invoice lifecycle, confirmations, AML hooks, and production patterns.
 
 🧠 What This Demo Shows
 
-How crypto payments can feel as simple as card payments
+Crypto payments that feel as simple as card payments
 
-How merchants stay out of custody
+Merchants staying out of custody (no wallet management / no private keys)
 
-How users pay directly from their own wallet
+Users paying directly from their own wallet
 
-How confirmations, delays and failures are handled honestly and transparently
+Honest handling of confirmations, delays, errors, and expiration
 
-How a crypto checkout can look premium, safe and enterprise-ready
+A checkout that looks premium, safe, and enterprise-ready
 
 ✅ What’s Already Implemented
-🛍 1. Premium Product Catalog
+🛍 1) Premium Product Catalog
 
 6 demo products with HD images
 
@@ -46,7 +47,7 @@ Apple-style clean layout
 
 Fully responsive (desktop / tablet / mobile)
 
-🧺 2. Functional Shopping Cart
+🧺 2) Functional Shopping Cart
 
 Instant add-to-cart
 
@@ -56,7 +57,7 @@ Sticky cart summary
 
 Fully client-side (no reloads)
 
-💳 3. Payment Methods
+💳 3) Payment Methods
 
 Card (placeholder)
 
@@ -64,13 +65,9 @@ Bank transfer (placeholder)
 
 Crypto Pay — active
 
-Crypto Pay redirects users to:
+Crypto Pay redirects users to /checkout, where the final invoice is created securely.
 
-/checkout
-
-where the final invoice is created securely.
-
-🧾 4. Checkout Page
+🧾 4) Checkout Page
 
 Order summary
 
@@ -80,7 +77,7 @@ Clear explanation of crypto payment flow
 
 Invoice is created via backend API (no amounts in URL)
 
-🛠 5. Invoice Creation API
+🛠 5) Invoice Creation API
 
 Endpoint
 
@@ -94,7 +91,7 @@ Enforces token ↔ network pairing
 
 Creates invoice via PSP backend
 
-Returns a hosted payment URL
+Returns hosted payment URL
 
 Response includes
 
@@ -110,33 +107,26 @@ hosted payment URL
 
 ⚠️ No sensitive payment data is stored on the frontend.
 
-💫 6. Hosted Crypto Payment Page
+💫 6) Hosted Crypto Payment Page
 
-/open/pay/[invoiceId]
-
-A fully hosted payment experience similar to Stripe Checkout:
+Route: /open/pay/[invoiceId]
+A hosted payment experience similar to Stripe Checkout:
 
 Fiat & crypto amounts
 
 Network & wallet address
 
-Payment status:
-
-waiting
-
-confirmed
-
-expired
+Payment status: waiting → confirmed / expired
 
 Real-time polling
 
 Honest placeholders while data is not yet available
 
-Ready for QR codes, copy buttons and deep links
+Ready for QR codes, copy buttons, deep links
 
-🔄 7. Real Payment Lifecycle (Demo-Driven)
+🔄 7) Real Payment Lifecycle (Demo-Driven)
 
-The demo already supports the full lifecycle:
+Supported lifecycle:
 
 Invoice created
 
@@ -152,17 +142,17 @@ Success page rendered
 
 All states are reflected in real time.
 
-☁️ 8. Deployment
+☁️ 8) Deployment
 
 Ready for Vercel
 
-Optimized for demos, onboarding and investor presentations
+Optimized for demos, onboarding, investor presentations
 
 Clean separation between:
 
-merchant frontend
+Merchant frontend
 
-hosted payment UI
+Hosted payment UI
 
 PSP backend (separate project)
 
@@ -202,15 +192,13 @@ merchant onboarding walkthroughs
 
 🚧 Roadmap — Frontend Work for Production Grade
 
-Below — what still makes sense to do on the Crypto Pay frontend, and why.
-
-1️⃣ Remove Demo-Only Logic in Production
+1. Remove Demo-Only Logic in Production
 
 What
 
-Disable query-based fallbacks in prod
+Disable query-based fallbacks in production
 
-Remove any “simulate paid” behaviour
+Remove any “simulate paid” behavior
 
 Enforce backend-only data
 
@@ -220,15 +208,11 @@ Prevents amount manipulation
 
 Aligns with real PSP security models
 
-2️⃣ Full Status Coverage in UI
+2. Full Status Coverage in UI
 
-Support (as soon as PSP provides them):
+Support as soon as PSP provides:
 
-underpaid
-
-overpaid
-
-partial
+underpaid, overpaid, partial
 
 pending_confirmations
 
@@ -238,21 +222,17 @@ Why
 
 Reduces support tickets by 5–10×
 
-Makes the system self-explanatory for users
+Makes the system self-explanatory
 
-3️⃣ Pending / Confirmations UX
+3. Pending / Confirmations UX
 
-When a transaction is detected:
+When transaction is detected:
 
 Show txHash (copyable)
 
 Show confirmations progress (e.g. 1 / 3)
 
-Clear messaging:
-
-“You can safely close this page”
-
-or “Please keep this page open”
+Clear messaging: “You can safely close this page” / “Please keep this page open”
 
 Why
 
@@ -260,7 +240,7 @@ Users understand delays ≠ failure
 
 Builds trust
 
-4️⃣ Payment UX Improvements
+4. Payment UX Improvements
 
 Copy address (1 click)
 
@@ -276,19 +256,15 @@ Fewer payment mistakes
 
 Faster conversions
 
-5️⃣ Expiration Handling
+5. Expiration Handling
 
 When invoice expires:
 
 Block further payments
 
-Clear warning
+Show clear warning
 
-CTA:
-
-“Create new invoice”
-
-or “Back to checkout”
+CTA: “Create new invoice” / “Back to checkout”
 
 Why
 
@@ -296,15 +272,15 @@ Prevents late payments
 
 Avoids disputes
 
-6️⃣ Network / PSP Error Handling
+6. Network / PSP Error Handling
 
 If PSP API is unavailable:
 
-Show “Service temporarily unavailable”
+“Service temporarily unavailable”
 
 Retry button
 
-No fallback to query values in prod
+No fallback to query values in production
 
 Why
 
@@ -312,7 +288,7 @@ Honest UX
 
 No misleading data
 
-7️⃣ Success Page = Final Receipt
+7. Success Page as Final Receipt
 
 Show:
 
@@ -334,7 +310,7 @@ Acts as a receipt
 
 Needed for merchants & users
 
-8️⃣ Merchant Parameters Support
+8. Merchant Parameters Support
 
 At invoice creation:
 
@@ -352,7 +328,7 @@ Why
 
 Required for real ecommerce integrations
 
-9️⃣ Security Guarantees
+9. Security Guarantees
 
 No amounts in URLs
 
@@ -366,7 +342,7 @@ Prevents tampering
 
 PSP-level security baseline
 
-🔟 Merchant Mode (Optional)
+10. Merchant Mode (Optional)
 
 For hosted payment use cases:
 
@@ -386,8 +362,241 @@ If psp-core is the payment engine, then Crypto Pay frontend is the merchant-faci
 
 The most important frontend goals are:
 
-✅ clear statuses
-✅ honest waiting states
-✅ perfect UX around confirmations
-✅ no fake data, no illusions
+✅ Clear statuses
+
+✅ Honest waiting states
+
+✅ Perfect UX around confirmations
+
+✅ No fake data, no illusions
+
+✅ Success = receipt
+
+🇷🇺 Русская версия
+🟦 Crypto Pay
+
+Премиальный крипто-чекаут · Demo интеграция для eCommerce
+
+Современный, “дорогой” крипто-чекаут на базе швейцарского лицензированного PSP.
+Подходит для реальных интернет-магазинов, премиальных брендов и финтех-платформ.
+
+✨ Обзор
+
+Crypto Pay — это демо интеграция для eCommerce, показывающая, как принимать крипто-платежи (USDT / USDC) чисто, комплаентно и “по-взрослому” — без того, чтобы мерчант вообще касался блокчейн-сложности.
+
+Проект показывает полный end-to-end flow:
+
+премиальный UI магазина
+
+корзина и checkout
+
+создание инвойса (на сервере)
+
+hosted crypto payment page (как Stripe Checkout)
+
+обновление статуса в реальном времени (polling)
+
+PSP-архитектура, готовая к production
+
+💡 Это не “макет”.
+Архитектура повторяет, как работают реальные PSP: жизненный цикл инвойса, подтверждения, AML-хуки и production-паттерны.
+
+🧠 Что демонстрирует этот проект
+
+крипто-платёж ощущается как оплата картой
+
+мерчант не хранит ключи и не управляет кошельками (нет custody)
+
+пользователь платит напрямую со своего кошелька
+
+задержки/подтверждения/ошибки отображаются честно и прозрачно
+
+интерфейс выглядит премиально, безопасно и “enterprise-ready”
+
+✅ Уже реализовано
+🛍 1) Премиальный каталог
+
+6 демо-товаров с HD-изображениями
+
+чистый “Apple-style”
+
+адаптивность (desktop / tablet / mobile)
+
+🧺 2) Корзина
+
+мгновенное добавление
+
+живые суммы/пересчёт
+
+липкий summary
+
+полностью client-side
+
+💳 3) Методы оплаты
+
+Card (заглушка)
+
+Bank transfer (заглушка)
+
+Crypto Pay — активный
+
+Crypto Pay ведёт на /checkout, где инвойс создаётся безопасно на сервере.
+
+🧾 4) Checkout страница
+
+summary заказа
+
+понятное объяснение crypto-оплаты
+
+кнопка “Continue to Crypto Pay”
+
+инвойс создаётся через backend API (сумм в URL нет)
+
+🛠 5) API создания инвойса
+
+Endpoint
+
+POST /api/payments/create
+
+Что делает
+
+валидирует суммы
+
+проверяет соответствие token ↔ network
+
+создаёт инвойс в PSP backend
+
+возвращает hosted payment URL
+
+В ответе
+
+invoiceId
+
+суммы fiat/crypto
+
+сеть
+
+срок действия
+
+hosted payment URL
+
+⚠️ Никаких чувствительных данных фронт не хранит.
+
+💫 6) Hosted страница оплаты
+
+Маршрут: /open/pay/[invoiceId]
+Страница оплаты “как у Stripe”:
+
+суммы fiat/crypto
+
+сеть и адрес кошелька
+
+статусы waiting → confirmed / expired
+
+polling в реальном времени
+
+честные placeholders пока данные ещё не готовы
+
+готово под QR/copy/deeplinks
+
+🔄 7) Полный жизненный цикл оплаты (демо)
+
+инвойс создан
+
+пользователь видит адрес+сумму
+
+транзакция обнаружена (появляется txHash)
+
+подтверждения обработаны
+
+оплата подтверждена
+
+рендерится success
+
+Все состояния отображаются в реальном времени.
+
+☁️ 8) Деплой
+
+готово под Vercel
+
+подходит для демо, онбординга, инвесторов
+
+разделение:
+
+merchant frontend
+
+hosted payment UI
+
+PSP backend (отдельный проект)
+
+🧩 Структура проекта
+app/
+├─ page.tsx
+├─ checkout/
+├─ open/
+│ └─ pay/
+│ └─ [invoiceId]/
+├─ api/
+│ └─ payments/
+│ ├─ create/
+│ └─ status/
+
+src/
+├─ components/
+│ ├─ demo/
+│ ├─ checkout/
+│ └─ cryptoPay/
+├─ lib/
+│ └─ invoiceStore.ts (demo only)
+
+🟩 Текущий статус
+
+≈ 75% готово
+
+Уже подходит для:
+
+демо
+
+партнёров
+
+инвесторов
+
+онбординга мерчантов
+
+🚧 Roadmap — что доделать на фронте до production
+
+Убрать demo-логику в проде
+
+Расширить статусы (underpaid/overpaid/partial/pending_confirmations/rejected)
+
+Нормальный UX подтверждений (txHash, прогресс, сообщения)
+
+Улучшить UX оплаты (copy address/amount, QR, wallet deeplinks)
+
+Expiration flow (блокировка оплаты + CTA)
+
+Ошибки PSP/network (честно + retry)
+
+Success = чек/receipt (все суммы/таймстемпы/returnUrl)
+
+Параметры мерчанта (orderId, description, webhookUrl, returnUrl)
+
+Гарантии безопасности (без сумм в URL, backend = источник истины)
+
+Merchant mode / white-label (опционально)
+
+🧠 Итог
+
+Если psp-core — это “движок платежей”, то Crypto Pay frontend — это trust layer для мерчанта и пользователя.
+
+Главные цели фронта:
+
+✅ понятные статусы
+
+✅ честные ожидания
+
+✅ идеальный UX подтверждений
+
+✅ никаких “фейков”
+
 ✅ success = receipt

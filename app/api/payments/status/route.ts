@@ -1,10 +1,11 @@
 // app/api/payments/status/route.ts
 import { NextResponse } from "next/server";
 
-const BUILD_STAMP = "status-route-v2-2025-12-25-__A1";
+const BUILD_STAMP = "status-route-v3-2026-01-02__M1";
 
 const PSP_API_URL = (process.env.PSP_API_URL ?? "").replace(/\/+$/, "");
 const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
+const PSP_MERCHANT_ID = (process.env.PSP_MERCHANT_ID ?? "").trim();
 
 type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
@@ -140,17 +141,33 @@ export async function GET(req: Request) {
     return NextResponse.json(res, { status: 500 });
   }
 
+  if (!PSP_MERCHANT_ID) {
+    const res: ErrResponse = {
+      ok: false,
+      error: "PSP_MERCHANT_ID is empty",
+      details: "Set PSP_MERCHANT_ID in .env.local and restart",
+    };
+    return NextResponse.json(res, { status: 500 });
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
 
   try {
     const url = `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`;
 
+    console.log("[status] PSP_API_URL =", PSP_API_URL);
+    console.log("[status] PSP_MERCHANT_ID =", PSP_MERCHANT_ID);
+    console.log("[status] PSP_API_KEY_len =", PSP_API_KEY.length);
+    console.log("[status] invoiceId =", invoiceId);
+    console.log("[status] BUILD_STAMP =", BUILD_STAMP);
+
     const pspRes = await fetch(url, {
       cache: "no-store",
       signal: controller.signal,
       headers: {
         "x-api-key": PSP_API_KEY,
+        "x-merchant-id": PSP_MERCHANT_ID,
         Accept: "application/json",
       },
     });
