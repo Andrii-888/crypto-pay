@@ -77,11 +77,34 @@ export function KVRow({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex items-start gap-2">
       <span className="w-28 shrink-0 text-slate-500">{k}</span>
-      {/* ✅ break-all (без “подчёркивания/переносов”) */}
       <span className="min-w-0 break-all font-mono text-[11px] text-slate-900">
         {v}
       </span>
     </div>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={[
+        "h-4 w-4",
+        "text-slate-500",
+        "transition-transform duration-200",
+        open ? "rotate-180" : "rotate-0",
+      ].join(" ")}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M5 8l5 5 5-5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -92,29 +115,23 @@ export function DebugPanel({
 }: {
   open: boolean;
   snapshot: unknown | null;
-
   onToggle: () => void;
 }) {
   return (
-    <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
         className={[
           "w-full",
           "flex items-center justify-between gap-4",
-          "px-4 py-3",
+          "px-4 py-4",
           "text-left",
-          "rounded-xl",
-          "border border-slate-200",
-          "bg-white",
-          "shadow-sm",
           "transition",
-          "hover:bg-slate-50 hover:border-slate-300",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/15 focus-visible:ring-offset-2",
-          "active:scale-[0.99]",
+          open ? "bg-slate-50" : "bg-white hover:bg-slate-50",
         ].join(" ")}
-        aria-expanded={open}
       >
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-900">
@@ -125,22 +142,25 @@ export function DebugPanel({
           </div>
         </div>
 
-        <span
-          className={[
-            "shrink-0",
-            "inline-flex items-center",
-            "rounded-full",
-            "px-3 py-1",
-            "text-xs font-semibold",
-            "border",
-            open
-              ? "bg-slate-900 text-white border-slate-900"
-              : "bg-white text-slate-900 border-slate-200",
-            "transition",
-          ].join(" ")}
-        >
-          {open ? "Hide" : "Show"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={[
+              "shrink-0",
+              "inline-flex items-center",
+              "rounded-full",
+              "px-3 py-1",
+              "text-xs font-semibold",
+              "border",
+              "transition",
+              open
+                ? "bg-slate-900 text-white border-slate-900"
+                : "bg-white text-slate-900 border-slate-200 hover:border-slate-300",
+            ].join(" ")}
+          >
+            {open ? "Hide" : "Show"}
+          </span>
+          <Chevron open={open} />
+        </div>
       </button>
 
       {open ? (
@@ -154,7 +174,7 @@ export function DebugPanel({
             </span>
           </div>
 
-          <pre className="overflow-auto rounded-lg bg-slate-900 p-3 text-[11px] leading-5 text-slate-100 max-h-420px">
+          <pre className="max-h-420px overflow-auto rounded-xl bg-slate-900 p-3 text-[11px] leading-5 text-slate-100">
             {JSON.stringify(
               snapshot ?? { ok: false, error: "No snapshot yet" },
               null,
