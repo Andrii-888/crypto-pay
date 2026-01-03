@@ -187,7 +187,7 @@ export function DebugPanel({
             </span>
           </div>
 
-          <pre className="max-h-[420px] overflow-auto rounded-xl bg-slate-900 p-3 text-[11px] leading-5 text-slate-100">
+          <pre className="max-h-420px overflow-auto rounded-xl bg-slate-900 p-3 text-[11px] leading-5 text-slate-100">
             {JSON.stringify(
               snapshot ?? { ok: false, error: "No snapshot yet" },
               null,

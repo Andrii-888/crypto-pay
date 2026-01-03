@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import type { InvoiceStatus, InvoiceView } from "./success.types";
 import { DebugPanel, fmtTs, formatMoney, statusUi, KVRow } from "./success.ui";
 
@@ -105,10 +104,6 @@ function asString(v: unknown): string | null {
 
 function asNumber(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
   return null;
 }
 
@@ -165,8 +160,6 @@ function extractInvoicePatch(data: StatusResponseOk): Partial<InvoiceView> {
 }
 
 function SuccessInner({ id }: { id: string }) {
-  const searchParams = useSearchParams();
-
   const [invoice, setInvoice] = useState<InvoiceView>(() => ({
     invoiceId: id,
     status: "waiting",
@@ -178,10 +171,6 @@ function SuccessInner({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const statusRef = useRef<InvoiceStatus>("waiting");
-
-  useEffect(() => {
-    console.log("[SUCCESS CLIENT] mounted (browser)");
-  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -198,7 +187,7 @@ function SuccessInner({ id }: { id: string }) {
     const tick = async () => {
       if (cancelled) return;
 
-      // stop polling when final
+      // stop polling only when status is final
       if (statusRef.current !== "waiting") return;
 
       try {
@@ -240,9 +229,7 @@ function SuccessInner({ id }: { id: string }) {
 
         setError(null);
 
-        if (nextStatus !== "waiting") return;
-
-        schedule();
+        if (nextStatus === "waiting") schedule();
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Fetch failed");
         schedule();
@@ -269,13 +256,6 @@ function SuccessInner({ id }: { id: string }) {
       Boolean(invoice.decisionStatus)
     );
   }, [invoice.amlStatus, invoice.riskScore, invoice.decisionStatus]);
-
-  // ✅ Debug is hidden in production unless explicitly enabled
-  const debugParam = (searchParams.get("debug") ?? "").trim();
-  const debugEnabled =
-    process.env.NODE_ENV !== "production" ||
-    debugParam === "1" ||
-    process.env.NEXT_PUBLIC_CRYPTO_PAY_DEBUG === "1";
 
   return (
     <>
@@ -408,14 +388,12 @@ function SuccessInner({ id }: { id: string }) {
         </section>
       ) : null}
 
-      {/* Debug */}
-      {debugEnabled ? (
-        <DebugPanel
-          open={debugOpen}
-          snapshot={debugInvoice}
-          onToggle={() => setDebugOpen((v) => !v)}
-        />
-      ) : null}
+      {/* DebugPanel — НЕ ПРЯЧЕМ НИГДЕ */}
+      <DebugPanel
+        open={debugOpen}
+        snapshot={debugInvoice}
+        onToggle={() => setDebugOpen((v) => !v)}
+      />
     </>
   );
 }
