@@ -5,10 +5,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams: {
+  searchParams: Promise<{
     invoiceId?: string | string[];
-    debug?: string | string[];
-  };
+  }>;
 };
 
 function normalizeParam(value?: string | string[]): string | undefined {
@@ -16,14 +15,16 @@ function normalizeParam(value?: string | string[]): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default function CryptoPaySuccessPage({ searchParams }: PageProps) {
-  const invoiceId = (normalizeParam(searchParams.invoiceId) ?? "").trim();
-  const debug = normalizeParam(searchParams.debug) === "1" ? "1" : undefined;
+export default async function CryptoPaySuccessPage({
+  searchParams,
+}: PageProps) {
+  const sp = await searchParams;
+  const invoiceId = (normalizeParam(sp?.invoiceId) ?? "").trim();
 
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-xl px-4 py-10 lg:py-12">
-        <ClientSuccess invoiceId={invoiceId} debug={debug} />
+        <ClientSuccess invoiceId={invoiceId} />
 
         <div className="mt-8 flex justify-center">
           <Link
