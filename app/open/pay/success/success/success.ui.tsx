@@ -11,7 +11,20 @@ export function fmtTs(ts?: string | null) {
   if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString();
+
+  // Stable formatting across environments (local + Vercel)
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toLocaleString();
+  }
 }
 
 export function statusUi(status?: InvoiceStatus) {
@@ -174,7 +187,7 @@ export function DebugPanel({
             </span>
           </div>
 
-          <pre className="max-h-420px overflow-auto rounded-xl bg-slate-900 p-3 text-[11px] leading-5 text-slate-100">
+          <pre className="max-h-[420px] overflow-auto rounded-xl bg-slate-900 p-3 text-[11px] leading-5 text-slate-100">
             {JSON.stringify(
               snapshot ?? { ok: false, error: "No snapshot yet" },
               null,
