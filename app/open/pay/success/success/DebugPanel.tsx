@@ -1,7 +1,5 @@
 "use client";
 
-import React from "react";
-
 type DebugPanelProps = {
   open: boolean;
   snapshot: unknown | null;
@@ -79,9 +77,10 @@ function JsonPretty({ value }: { value: unknown }) {
     <pre
       className={[
         "relative",
+        "max-w-full",
         // mobile first: safer height and wrap
         "max-h-[60vh] sm:max-h-420px",
-        "overflow-auto",
+        "overflow-x-auto overflow-y-auto",
         "rounded-xl",
         "bg-slate-900",
         "p-3",
@@ -136,7 +135,7 @@ export function DebugPanel({ open, snapshot, onToggle }: DebugPanelProps) {
   };
 
   return (
-    <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section className="mt-6 max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <button
         type="button"
         onClick={onToggle}
@@ -182,7 +181,7 @@ export function DebugPanel({ open, snapshot, onToggle }: DebugPanelProps) {
       </button>
 
       {open ? (
-        <div className="px-4 pb-4">
+        <div className="min-w-0 px-4 pb-4">
           <div className="mb-2 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h3 className="text-xs font-semibold tracking-wide text-slate-600">
