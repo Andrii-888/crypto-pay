@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InvoiceStatus, InvoiceView } from "./success.types";
-import { DebugPanel, fmtTs, formatMoney, statusUi, KVRow } from "./success.ui";
+import { fmtTs, formatMoney, statusUi, KVRow } from "./success.ui";
+import { DebugPanel } from "./DebugPanel";
 
 type StatusResponseOk = {
   ok: true;
