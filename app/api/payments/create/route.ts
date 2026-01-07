@@ -28,6 +28,7 @@ type OkResponse = {
 
 type ErrResponse = {
   ok: false;
+  buildStamp?: string;
   error: string;
   message?: string;
   details?: string;
@@ -45,10 +46,10 @@ async function safeReadBody(res: Response): Promise<string | undefined> {
   const ct = res.headers.get("content-type") ?? "";
   if (ct.includes("application/json")) {
     const json = (await res.json().catch(() => null)) as unknown;
-    return json ? JSON.stringify(json) : undefined;
+    return json ? JSON.stringify(json).slice(0, 2000) : undefined;
   }
   const text = await res.text().catch(() => "");
-  return text ? text.slice(0, 1200) : undefined;
+  return text ? text.slice(0, 2000) : undefined;
 }
 
 function parseNumberLike(v: unknown): number | null {
@@ -91,10 +92,28 @@ function pickMerchantId(): string | null {
   return null;
 }
 
+// backend может отдавать url по-разному — вытащим максимально надёжно
+function extractPaymentUrl(data: JsonObject): string | null {
+  const direct = data.paymentUrl ?? data.payUrl ?? data.url;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+
+  const links = asObject(data.links);
+  const pay = links.pay ?? links.payment ?? links.checkout;
+  if (typeof pay === "string" && pay.trim()) return pay.trim();
+
+  const hosted = asObject(data.hosted);
+  const hostedUrl = hosted.url ?? hosted.paymentUrl;
+  if (typeof hostedUrl === "string" && hostedUrl.trim())
+    return hostedUrl.trim();
+
+  return null;
+}
+
 export async function POST(req: Request) {
   if (!PSP_API_URL) {
     const res: ErrResponse = {
       ok: false,
+      buildStamp: BUILD_STAMP,
       error: "PSP_API_URL is empty",
       details: "Set PSP_API_URL in .env.local and restart",
     };
@@ -104,6 +123,7 @@ export async function POST(req: Request) {
   if (!PSP_API_KEY) {
     const res: ErrResponse = {
       ok: false,
+      buildStamp: BUILD_STAMP,
       error: "PSP_API_KEY is empty",
       details: "Set PSP_API_KEY in .env.local and restart",
     };
@@ -114,6 +134,7 @@ export async function POST(req: Request) {
   if (!merchantId) {
     const res: ErrResponse = {
       ok: false,
+      buildStamp: BUILD_STAMP,
       error: "PSP_MERCHANT_ID is empty",
       details:
         "Set PSP_MERCHANT_ID in .env.local (must exist in psp-core merchants table)",
@@ -140,6 +161,7 @@ export async function POST(req: Request) {
   if (!fiatAmount || fiatAmount <= 0) {
     const res: ErrResponse = {
       ok: false,
+      buildStamp: BUILD_STAMP,
       error: "Invalid amount",
       details: "amount must be a positive number (comma or dot allowed)",
     };
@@ -149,6 +171,7 @@ export async function POST(req: Request) {
   if (!fiatCurrency) {
     const res: ErrResponse = {
       ok: false,
+      buildStamp: BUILD_STAMP,
       error: "Invalid currency",
       details: "currency must be a 3-letter code like USD/EUR/CHF",
     };
@@ -158,6 +181,7 @@ export async function POST(req: Request) {
   if (!cryptoCurrency) {
     const res: ErrResponse = {
       ok: false,
+      buildStamp: BUILD_STAMP,
       error: "Invalid asset",
       details: "asset must be USDT or USDC",
     };
@@ -169,12 +193,17 @@ export async function POST(req: Request) {
     fiatAmount,
     fiatCurrency,
     cryptoCurrency,
+    // важно для трассировки в psp-core логах
+    metadata: {
+      source: "crypto-pay",
+      buildStamp: BUILD_STAMP,
+    },
   };
   if (network) payload.network = network;
   if (description) payload.description = description;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), 12_000);
 
   try {
     console.log("[create] PSP_API_URL =", PSP_API_URL);
@@ -199,6 +228,7 @@ export async function POST(req: Request) {
       const details = await safeReadBody(pspRes);
       const res: ErrResponse = {
         ok: false,
+        buildStamp: BUILD_STAMP,
         error: "PSP_ERROR",
         message: `PSP responded ${pspRes.status}`,
         backendStatus: `HTTP ${pspRes.status}`,
@@ -215,9 +245,10 @@ export async function POST(req: Request) {
     if (!invoiceId) {
       const res: ErrResponse = {
         ok: false,
+        buildStamp: BUILD_STAMP,
         error: "PSP_ERROR",
         message: "PSP response missing invoice id",
-        details: JSON.stringify(data),
+        details: JSON.stringify(data).slice(0, 2000),
         pspApiUrl: PSP_API_URL,
       };
       return NextResponse.json(res, { status: 502 });
@@ -228,7 +259,7 @@ export async function POST(req: Request) {
       buildStamp: BUILD_STAMP,
       invoiceId,
       status: typeof data.status === "string" ? data.status : undefined,
-      paymentUrl: typeof data.paymentUrl === "string" ? data.paymentUrl : null,
+      paymentUrl: extractPaymentUrl(data),
       backendData: data,
     };
 
@@ -236,15 +267,16 @@ export async function POST(req: Request) {
     out.headers.set("Cache-Control", "no-store");
     return out;
   } catch (e: unknown) {
-    const err =
-      e instanceof Error && e.name === "AbortError"
-        ? "PSP timeout"
-        : "Fetch failed";
+    const isAbort = e instanceof Error && e.name === "AbortError";
 
     const res: ErrResponse = {
       ok: false,
-      error: err,
-      details: e instanceof Error ? e.message : "Unknown error",
+      buildStamp: BUILD_STAMP,
+      error: isAbort ? "PSP timeout" : "Fetch failed",
+      details:
+        e instanceof Error
+          ? `${e.name}: ${e.message}`.slice(0, 300)
+          : String(e ?? "Unknown error").slice(0, 300),
       pspApiUrl: PSP_API_URL,
     };
     return NextResponse.json(res, { status: 502 });
