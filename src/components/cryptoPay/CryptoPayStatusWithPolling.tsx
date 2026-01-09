@@ -12,57 +12,10 @@ type Props = {
   invoiceId: string;
   initialStatus: InvoiceStatus;
   expiresAt?: string | null;
-  onInvoiceUpdate?: (updater: (prev: InvoiceData) => InvoiceData) => void;
+  onInvoiceUpdate?: (
+    patch: InvoiceData | ((prev: InvoiceData) => InvoiceData)
+  ) => void;
 };
-
-type StatusApiOk = {
-  ok: true;
-  invoiceId?: string;
-  status?: string;
-  expiresAt?: string | null;
-
-  createdAt?: string | null;
-  detectedAt?: string | null;
-  confirmedAt?: string | null;
-
-  fiatAmount?: number;
-  fiatCurrency?: string;
-  cryptoAmount?: number;
-  cryptoCurrency?: string;
-  network?: string;
-
-  grossAmount?: number;
-  feeAmount?: number;
-  netAmount?: number;
-  feeBps?: number;
-  feePayer?: string;
-
-  fxRate?: number;
-  fxPair?: string;
-
-  txStatus?: string;
-  txHash?: string | null;
-  walletAddress?: string | null;
-  confirmations?: number;
-  requiredConfirmations?: number;
-
-  amlStatus?: string | null;
-  riskScore?: number | null;
-  assetStatus?: string | null;
-  assetRiskScore?: number | null;
-
-  decisionStatus?: string | null;
-  decisionReasonCode?: string | null;
-  decisionReasonText?: string | null;
-  decidedAt?: string | null;
-  decidedBy?: string | null;
-
-  merchantId?: string | null;
-};
-
-type StatusApiResponse =
-  | StatusApiOk
-  | { ok: false; error?: string; details?: string };
 
 function normalizeStatus(s?: string | null): InvoiceStatus {
   return s === "waiting" ||
@@ -83,65 +36,6 @@ function isExpiredByTime(expiresAt?: string | null) {
   return Number.isFinite(t) && Date.now() >= t;
 }
 
-function mergeSnapshot(prev: InvoiceData, snap: StatusApiOk): InvoiceData {
-  const next: InvoiceData = { ...prev };
-
-  const set = <K extends keyof InvoiceData>(key: K, value: unknown) => {
-    if (value === undefined || value === null) return;
-    (next[key] as unknown) = value as InvoiceData[K];
-  };
-
-  set("invoiceId", snap.invoiceId ?? prev.invoiceId);
-  set("status", normalizeStatus(snap.status) as InvoiceData["status"]);
-  set("expiresAt", snap.expiresAt);
-
-  set("createdAt", snap.createdAt);
-  set("detectedAt", snap.detectedAt);
-  set("confirmedAt", snap.confirmedAt);
-
-  set("fiatAmount", snap.fiatAmount);
-  set("fiatCurrency", snap.fiatCurrency);
-  set("cryptoAmount", snap.cryptoAmount);
-  set("cryptoCurrency", snap.cryptoCurrency);
-  set("network", snap.network);
-
-  set("grossAmount", snap.grossAmount);
-  set("feeAmount", snap.feeAmount);
-  set("netAmount", snap.netAmount);
-  set("feeBps", snap.feeBps);
-  set("feePayer", snap.feePayer);
-
-  set("fxRate", snap.fxRate);
-  set("fxPair", snap.fxPair);
-
-  // tx (не затираем если пришло null/undefined)
-  set("txStatus", snap.txStatus ?? prev.txStatus);
-  set("txHash", snap.txHash ?? prev.txHash);
-  set("walletAddress", snap.walletAddress ?? prev.walletAddress);
-
-  if (typeof snap.confirmations === "number") {
-    set("confirmations", snap.confirmations);
-  }
-  if (typeof snap.requiredConfirmations === "number") {
-    set("requiredConfirmations", snap.requiredConfirmations);
-  }
-
-  set("amlStatus", snap.amlStatus);
-  set("riskScore", snap.riskScore);
-  set("assetStatus", snap.assetStatus);
-  set("assetRiskScore", snap.assetRiskScore);
-
-  set("decisionStatus", snap.decisionStatus);
-  set("decisionReasonCode", snap.decisionReasonCode);
-  set("decisionReasonText", snap.decisionReasonText);
-  set("decidedAt", snap.decidedAt);
-  set("decidedBy", snap.decidedBy);
-
-  set("merchantId", snap.merchantId);
-
-  return next;
-}
-
 export function CryptoPayStatusWithPolling({
   invoiceId,
   initialStatus,
@@ -157,7 +51,7 @@ export function CryptoPayStatusWithPolling({
   const statusRef = useRef<InvoiceStatus>(normalizeStatus(initialStatus));
   const redirectedRef = useRef(false);
 
-  // синхронизация initialStatus → ref + state (один раз)
+  // sync initialStatus -> ref + state
   useEffect(() => {
     const s = normalizeStatus(initialStatus);
     statusRef.current = s;
@@ -193,12 +87,19 @@ export function CryptoPayStatusWithPolling({
 
         if (!res.ok) throw new Error("status fetch failed");
 
-        const snap = (await res.json()) as StatusApiResponse;
-        if (!snap.ok) throw new Error("status api error");
+        const snap = await res.json();
 
-        onInvoiceUpdate?.((prev) => mergeSnapshot(prev, snap));
+        if (!snap || typeof snap !== "object" || snap.ok !== true) {
+          throw new Error("status api error");
+        }
 
-        const nextStatus = normalizeStatus(snap.status);
+        // 🔹 отдаем снапшот наверх (PaymentClient сам обновляет state)
+        onInvoiceUpdate?.(snap);
+
+        const nextStatus = normalizeStatus(
+          typeof snap.status === "string" ? snap.status : undefined
+        );
+
         if (nextStatus !== statusRef.current) {
           statusRef.current = nextStatus;
           setStatus(nextStatus);
@@ -218,7 +119,7 @@ export function CryptoPayStatusWithPolling({
       }
     };
 
-    void poll();
+    timer = setTimeout(poll, 2500);
 
     return () => {
       cancelled = true;

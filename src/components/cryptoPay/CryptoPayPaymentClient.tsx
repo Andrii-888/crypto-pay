@@ -1,4 +1,3 @@
-// src/components/cryptoPay/CryptoPayPaymentClient.tsx
 "use client";
 
 import { useState } from "react";
@@ -14,10 +13,69 @@ type Props = {
   initialInvoice: InvoiceData;
 };
 
+type PayShape = {
+  address?: string | null;
+  network?: string | null;
+};
+
+function readPay(inv: InvoiceData): PayShape | null {
+  const maybe = inv as unknown as { pay?: unknown };
+  const p = maybe.pay;
+
+  if (!p || typeof p !== "object") return null;
+
+  const obj = p as Record<string, unknown>;
+
+  const address =
+    typeof obj.address === "string"
+      ? obj.address
+      : obj.address === null
+      ? null
+      : undefined;
+
+  const network =
+    typeof obj.network === "string"
+      ? obj.network
+      : obj.network === null
+      ? null
+      : undefined;
+
+  return { address, network };
+}
+
 function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
   const [invoice, setInvoice] = useState<InvoiceData>(() => initialInvoice);
 
   const invoiceId = (invoice.invoiceId ?? "").trim();
+
+  // show instructions unless link is dead
+  const showInstructions =
+    invoice.status !== "expired" && invoice.status !== "rejected";
+
+  const pay = readPay(invoice);
+
+  // Prefer provider pay.* fields (NOWPayments) when present
+  const effectiveWalletAddress = (
+    pay?.address ??
+    invoice.walletAddress ??
+    ""
+  ).trim();
+
+  const effectiveNetwork = (pay?.network ?? invoice.network ?? "").trim();
+
+  // wallet instructions require address to be actually useful
+  const hasPaymentAddress = Boolean(effectiveWalletAddress);
+
+  // ✅ Adapter: CryptoPayStatusWithPolling expects updater-style callback
+  const handleInvoiceUpdate = (
+    patch: InvoiceData | ((prev: InvoiceData) => InvoiceData)
+  ) => {
+    if (typeof patch === "function") {
+      setInvoice((prev) => patch(prev));
+      return;
+    }
+    setInvoice(patch);
+  };
 
   // Hard stop: don’t render payment UI until we actually have invoiceId.
   if (!invoiceId) {
@@ -36,13 +94,6 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
     );
   }
 
-  // show instructions unless link is dead
-  const showInstructions =
-    invoice.status !== "expired" && invoice.status !== "rejected";
-
-  // wallet instructions require address to be actually useful
-  const hasPaymentAddress = Boolean(invoice.walletAddress);
-
   return (
     <>
       <CryptoPayHeader invoiceId={invoiceId} />
@@ -51,7 +102,7 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
         invoiceId={invoiceId}
         initialStatus={invoice.status}
         expiresAt={invoice.expiresAt ?? ""}
-        onInvoiceUpdate={setInvoice}
+        onInvoiceUpdate={handleInvoiceUpdate}
       />
 
       <div className="mt-3 mb-4">
@@ -103,8 +154,8 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
                 invoiceId={invoiceId}
                 cryptoCurrency={invoice.cryptoCurrency}
                 cryptoAmount={invoice.cryptoAmount}
-                walletAddress={invoice.walletAddress}
-                network={invoice.network}
+                walletAddress={effectiveWalletAddress}
+                network={effectiveNetwork}
               />
             )}
           </>

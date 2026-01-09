@@ -27,5 +27,9 @@
     "eslint-config-next": "16.0.5",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "volta": {
+    "node": "20.11.1",
+    "npm": "10.8.2"
   }
 }

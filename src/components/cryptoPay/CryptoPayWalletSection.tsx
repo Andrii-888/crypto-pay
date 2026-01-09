@@ -1,7 +1,7 @@
 // src/components/cryptoPay/CryptoPayWalletSection.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CryptoPayQrBox } from "./CryptoPayQrBox";
 
@@ -11,10 +11,10 @@ type CryptoPayWalletSectionProps = {
   invoiceId: string;
 
   walletAddress?: string | null;
-  network?: string | null; // "TRON" | "ETH" | "BSC" | ...
+  network?: string | null; // "TRON" | "ETH"
 };
 
-type NetworkKey = "trc20" | "bep20" | "erc20";
+type NetworkKey = "trc20" | "erc20";
 type TokenKey = "USDT" | "USDC";
 
 type TokenNetworkConfig = Record<
@@ -23,7 +23,6 @@ type TokenNetworkConfig = Record<
     code: string;
     label: string;
     description: string;
-    address: string;
   }
 >;
 
@@ -32,20 +31,12 @@ const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
     trc20: {
       code: "TRC20 · TRON",
       label: "TRC20 · TRON",
-      description: "Tether USDT TRC-20 · TRON network",
-      address: "TAEtcMJZ4YchkL3JtmcsR9JK2KzUbaMrh3",
+      description: "Tether USDT · TRON (TRC-20)",
     },
     erc20: {
       code: "ERC20 · Ethereum",
       label: "ERC20 · Ethereum",
-      description: "Tether USDT ERC-20 · Ethereum network",
-      address: "0xUSDT_ERC20_DEMO_ADDRESS_HERE",
-    },
-    bep20: {
-      code: "BEP20 · BNB",
-      label: "BEP20 · BNB",
-      description: "Tether USDT BEP-20 · BNB Smart Chain",
-      address: "0x3de11960168e06871057ec26B9393ceA7858D0fE",
+      description: "Tether USDT · Ethereum (ERC-20)",
     },
   },
 
@@ -53,20 +44,12 @@ const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
     trc20: {
       code: "TRC20 · TRON",
       label: "TRC20 · TRON",
-      description: "USD Coin USDC TRC-20 · TRON network",
-      address: "T_USDC_TRC20_ADDRESS_HERE",
+      description: "USD Coin USDC · TRON (TRC-20)",
     },
     erc20: {
       code: "ERC20 · Ethereum",
       label: "ERC20 · Ethereum",
-      description: "USD Coin USDC ERC-20 · Ethereum network",
-      address: "0xUSDC_ERC20_DEMO_ADDRESS_HERE",
-    },
-    bep20: {
-      code: "BEP20 · BNB",
-      label: "BEP20 · BNB",
-      description: "USD Coin USDC BEP-20 · BNB Smart Chain",
-      address: "0x3de11960168e06871057ec26B9393ceA7858D0fE",
+      description: "USD Coin USDC · Ethereum (ERC-20)",
     },
   },
 };
@@ -92,11 +75,11 @@ function inferNetworkKey(
     .trim()
     .toUpperCase();
 
+  // PSP-core returns chain: "TRON" | "ETH"
   if (n === "TRON" || n === "TRC20") return "trc20";
   if (n === "ETH" || n === "ETHEREUM" || n === "ERC20") return "erc20";
-  if (n === "BSC" || n === "BNB" || n === "BEP20") return "bep20";
 
-  // fallback as before (demo default)
+  // fallback (should not happen in prod; only if PSP didn't send network)
   return token === "USDC" ? "erc20" : "trc20";
 }
 
@@ -111,27 +94,11 @@ export function CryptoPayWalletSection({
 
   const token = normalizeToken(cryptoCurrency);
 
-  // If PSP provided network, lock it.
-  const pspNetKey = useMemo<NetworkKey | null>(() => {
-    const n = String(pspNetwork ?? "").trim();
-    return n ? inferNetworkKey(n, token) : null;
-  }, [pspNetwork, token]);
-
-  // activeNet only matters in demo mode (no PSP network)
-  const [activeNet, setActiveNet] = useState<NetworkKey>(
-    () => pspNetKey ?? inferNetworkKey(null, token)
+  // PSP network is authoritative; fallback only if missing
+  const netKeyToUse: NetworkKey = useMemo(
+    () => inferNetworkKey(pspNetwork, token),
+    [pspNetwork, token]
   );
-
-  useEffect(() => {
-    // whenever token or pspNetwork changes, align
-    if (pspNetKey) {
-      setActiveNet(pspNetKey);
-    } else {
-      setActiveNet(inferNetworkKey(null, token));
-    }
-  }, [pspNetKey, token]);
-
-  const netKeyToUse: NetworkKey = pspNetKey ?? activeNet;
 
   const [copiedKind, setCopiedKind] = useState<CopyKind>(null);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -139,9 +106,8 @@ export function CryptoPayWalletSection({
 
   const networkCfg = TOKEN_CONFIG[token][netKeyToUse];
 
-  const addressToShow = walletAddress?.trim()
-    ? walletAddress.trim()
-    : networkCfg.address;
+  // Address MUST come from backend (psp-core / provider)
+  const addressToShow = (walletAddress ?? "").trim();
 
   const amountNumber = useMemo(() => cryptoAmount.toFixed(2), [cryptoAmount]);
   const amountText = useMemo(
@@ -154,9 +120,15 @@ export function CryptoPayWalletSection({
     p.set("amount", amountNumber);
     p.set("currency", token);
     p.set("invoice", invoiceId);
-    p.set("network", netKeyToUse);
+    // pass chain value expected by PSP-core ("TRON" | "ETH") for consistency
+    p.set(
+      "network",
+      String(pspNetwork ?? "")
+        .trim()
+        .toUpperCase() || ""
+    );
     return `${addressToShow}?${p.toString()}`;
-  }, [addressToShow, amountNumber, token, invoiceId, netKeyToUse]);
+  }, [addressToShow, amountNumber, token, invoiceId, pspNetwork]);
 
   async function copy(text: string, kind: CopyKind) {
     try {
@@ -218,8 +190,6 @@ export function CryptoPayWalletSection({
     }
   }
 
-  const isLockedByPsp = Boolean(pspNetKey);
-
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-4">
       <div>
@@ -228,13 +198,13 @@ export function CryptoPayWalletSection({
         </h2>
 
         <p className="mt-1 text-xs text-slate-500">
-          Choose the network you want to use and send exactly{" "}
+          Send exactly{" "}
           <span className="inline-flex items-baseline gap-1 font-semibold text-slate-900 tabular-nums">
             <span>{amountNumber}</span>
             <span className="font-medium text-slate-700">{token}</span>
           </span>{" "}
-          from your own wallet. In production this address is generated by the
-          Swiss payment provider.
+          from your own wallet. The address and network are provided by the
+          payment provider.
         </p>
 
         <p className="mt-2 text-[11px] text-slate-500">
@@ -242,52 +212,12 @@ export function CryptoPayWalletSection({
         </p>
       </div>
 
-      {isLockedByPsp ? (
-        <div className="inline-flex items-center gap-2">
-          <span className="text-[11px] text-slate-500">Network</span>
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-900">
-            {networkCfg.label}
-          </span>
-        </div>
-      ) : (
-        <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px]">
-          <button
-            type="button"
-            onClick={() => setActiveNet("trc20")}
-            className={`px-3 py-1.5 rounded-full transition ${
-              netKeyToUse === "trc20"
-                ? "bg-white shadow-sm text-slate-900"
-                : "text-slate-500"
-            }`}
-          >
-            TRC20 · TRON
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveNet("erc20")}
-            className={`px-3 py-1.5 rounded-full transition ${
-              netKeyToUse === "erc20"
-                ? "bg-white shadow-sm text-slate-900"
-                : "text-slate-500"
-            }`}
-          >
-            ERC20 · ETH
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveNet("bep20")}
-            className={`px-3 py-1.5 rounded-full transition ${
-              netKeyToUse === "bep20"
-                ? "bg-white shadow-sm text-slate-900"
-                : "text-slate-500"
-            }`}
-          >
-            BEP20 · BNB
-          </button>
-        </div>
-      )}
+      <div className="inline-flex items-center gap-2">
+        <span className="text-[11px] text-slate-500">Network</span>
+        <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-900">
+          {networkCfg.label}
+        </span>
+      </div>
 
       <div className="text-xs text-slate-600">
         <p className="font-medium">{networkCfg.description}</p>
@@ -306,6 +236,7 @@ export function CryptoPayWalletSection({
               type="button"
               onClick={() => copy(addressToShow, "address")}
               className="inline-flex items-center rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 transition"
+              disabled={!addressToShow}
             >
               {copiedKind === "address" ? "Copied" : "Copy address"}
             </button>
