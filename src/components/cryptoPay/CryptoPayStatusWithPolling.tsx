@@ -40,7 +40,6 @@ export function CryptoPayStatusWithPolling({
   invoiceId,
   initialStatus,
   expiresAt,
-  onInvoiceUpdate,
 }: Props) {
   const router = useRouter();
 
@@ -62,12 +61,18 @@ export function CryptoPayStatusWithPolling({
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
+    const schedule = (ms: number) => {
+      if (cancelled) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(poll, ms);
+    };
+
     const poll = async () => {
       if (cancelled) return;
 
       const id = invoiceId.trim();
       if (!id || redirectedRef.current) {
-        timer = setTimeout(poll, 2500);
+        schedule(2500);
         return;
       }
 
@@ -88,22 +93,17 @@ export function CryptoPayStatusWithPolling({
         if (!res.ok) throw new Error("status fetch failed");
 
         const snap = await res.json();
+        if (!snap.ok) throw new Error("status api error");
 
-        if (!snap || typeof snap !== "object" || snap.ok !== true) {
-          throw new Error("status api error");
-        }
-
-        // 🔹 отдаем снапшот наверх (PaymentClient сам обновляет state)
-        onInvoiceUpdate?.(snap);
-
-        const nextStatus = normalizeStatus(
-          typeof snap.status === "string" ? snap.status : undefined
-        );
+        const nextStatus = normalizeStatus(snap.status);
 
         if (nextStatus !== statusRef.current) {
           statusRef.current = nextStatus;
           setStatus(nextStatus);
         }
+
+        // если хочешь — сюда можно пробросить данные наверх
+        // onInvoiceUpdate?.(snap as unknown as InvoiceData);
 
         if (nextStatus === "confirmed" && !redirectedRef.current) {
           redirectedRef.current = true;
@@ -112,20 +112,21 @@ export function CryptoPayStatusWithPolling({
         }
 
         if (!isFinalStatus(nextStatus)) {
-          timer = setTimeout(poll, 2500);
+          schedule(2500);
         }
       } catch {
-        timer = setTimeout(poll, 3000);
+        schedule(3000);
       }
     };
 
-    timer = setTimeout(poll, 2500);
+    // стартуем с паузы (не мгновенно), чтобы не спамить
+    schedule(2500);
 
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [invoiceId, expiresAt, onInvoiceUpdate, router]);
+  }, [invoiceId, expiresAt, router]);
 
   return <CryptoPayStatusBadge status={status} />;
 }
