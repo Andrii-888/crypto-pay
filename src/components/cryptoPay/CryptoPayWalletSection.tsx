@@ -17,13 +17,15 @@ type CryptoPayWalletSectionProps = {
 type NetworkKey = "trc20" | "erc20";
 type TokenKey = "USDT" | "USDC";
 
-type TokenNetworkConfig = Record<
-  NetworkKey,
-  {
-    code: string;
-    label: string;
-    description: string;
-  }
+type TokenNetworkConfig = Partial<
+  Record<
+    NetworkKey,
+    {
+      code: string;
+      label: string;
+      description: string;
+    }
+  >
 >;
 
 const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
@@ -39,13 +41,9 @@ const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
       description: "Tether USDT · Ethereum (ERC-20)",
     },
   },
-
   USDC: {
-    trc20: {
-      code: "TRC20 · TRON",
-      label: "TRC20 · TRON",
-      description: "USD Coin USDC · TRON (TRC-20)",
-    },
+    // NOTE: USDC on TRON is not available in NOWPayments for this account,
+    // so we intentionally expose only ERC20 here.
     erc20: {
       code: "ERC20 · Ethereum",
       label: "ERC20 · Ethereum",
@@ -67,10 +65,7 @@ function normalizeToken(v: string): TokenKey {
   return t === "USDC" ? "USDC" : "USDT";
 }
 
-function inferNetworkKey(
-  network?: string | null,
-  token?: TokenKey
-): NetworkKey {
+function inferNetworkKey(network?: string | null): NetworkKey {
   const n = String(network || "")
     .trim()
     .toUpperCase();
@@ -80,7 +75,7 @@ function inferNetworkKey(
   if (n === "ETH" || n === "ETHEREUM" || n === "ERC20") return "erc20";
 
   // fallback (should not happen in prod; only if PSP didn't send network)
-  return token === "USDC" ? "erc20" : "trc20";
+  return "erc20";
 }
 
 export function CryptoPayWalletSection({
@@ -92,22 +87,23 @@ export function CryptoPayWalletSection({
 }: CryptoPayWalletSectionProps) {
   const router = useRouter();
 
-  const token = normalizeToken(cryptoCurrency);
+  const token = useMemo(() => normalizeToken(cryptoCurrency), [cryptoCurrency]);
 
   // PSP network is authoritative; fallback only if missing
   const netKeyToUse: NetworkKey = useMemo(
-    () => inferNetworkKey(pspNetwork, token),
-    [pspNetwork, token]
+    () => inferNetworkKey(pspNetwork),
+    [pspNetwork]
   );
 
   const [copiedKind, setCopiedKind] = useState<CopyKind>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  const networkCfg = TOKEN_CONFIG[token][netKeyToUse];
-
   // Address MUST come from backend (psp-core / provider)
-  const addressToShow = (walletAddress ?? "").trim();
+  const addressToShow = useMemo(
+    () => String(walletAddress ?? "").trim(),
+    [walletAddress]
+  );
 
   const amountNumber = useMemo(() => cryptoAmount.toFixed(2), [cryptoAmount]);
   const amountText = useMemo(
@@ -115,18 +111,24 @@ export function CryptoPayWalletSection({
     [amountNumber, token]
   );
 
+  const networkCfg = useMemo(() => {
+    return TOKEN_CONFIG[token]?.[netKeyToUse];
+  }, [token, netKeyToUse]);
+
   const qrValue = useMemo(() => {
+    if (!addressToShow) return "";
+
     const p = new URLSearchParams();
     p.set("amount", amountNumber);
     p.set("currency", token);
     p.set("invoice", invoiceId);
+
     // pass chain value expected by PSP-core ("TRON" | "ETH") for consistency
-    p.set(
-      "network",
-      String(pspNetwork ?? "")
-        .trim()
-        .toUpperCase() || ""
-    );
+    const chain = String(pspNetwork ?? "")
+      .trim()
+      .toUpperCase();
+    if (chain) p.set("network", chain);
+
     return `${addressToShow}?${p.toString()}`;
   }, [addressToShow, amountNumber, token, invoiceId, pspNetwork]);
 
@@ -190,6 +192,9 @@ export function CryptoPayWalletSection({
     }
   }
 
+  // IMPORTANT: early-return ONLY after all hooks above (rules-of-hooks)
+  if (!networkCfg) return null;
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 space-y-4">
       <div>
@@ -229,13 +234,13 @@ export function CryptoPayWalletSection({
         <div className="rounded-xl bg-slate-900 px-3 py-2.5 text-slate-50 space-y-2">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] truncate flex-1">
-              {addressToShow}
+              {addressToShow || "—"}
             </span>
 
             <button
               type="button"
               onClick={() => copy(addressToShow, "address")}
-              className="inline-flex items-center rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 transition"
+              className="inline-flex items-center rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
               disabled={!addressToShow}
             >
               {copiedKind === "address" ? "Copied" : "Copy address"}

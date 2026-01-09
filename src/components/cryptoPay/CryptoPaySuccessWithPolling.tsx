@@ -89,6 +89,32 @@ type InvoiceView = {
   decisionReasonText?: string | null;
 };
 
+type TokenKey = "USDT" | "USDC";
+
+function normalizeToken(v: string): TokenKey {
+  const t = String(v || "")
+    .trim()
+    .toUpperCase();
+  return t === "USDC" ? "USDC" : "USDT";
+}
+
+function formatNetworkLabel(token: TokenKey, network?: string | null) {
+  const n = String(network || "")
+    .trim()
+    .toUpperCase();
+
+  if (n === "TRON" || n === "TRC20") {
+    // USDC TRON is not supported for this setup → показываем аккуратно
+    return token === "USDC" ? "ERC20 · Ethereum" : "TRC20 · TRON";
+  }
+
+  if (n === "ETH" || n === "ETHEREUM" || n === "ERC20") {
+    return "ERC20 · Ethereum";
+  }
+
+  return "—";
+}
+
 function normalizeStatus(s: unknown): InvoiceStatus {
   const v = typeof s === "string" ? s.toLowerCase() : "";
   return v === "waiting" ||
@@ -392,7 +418,12 @@ export function CryptoPaySuccessWithPolling({ invoiceId }: Props) {
 
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Network</span>
-          <span className="text-slate-900">{invoice?.network ?? "—"}</span>
+          <span className="text-slate-900">
+            {formatNetworkLabel(
+              normalizeToken(invoice?.cryptoCurrency ?? ""),
+              invoice?.network
+            )}
+          </span>
         </div>
       </section>
 
