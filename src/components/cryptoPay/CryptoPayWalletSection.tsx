@@ -105,7 +105,24 @@ export function CryptoPayWalletSection({
     [walletAddress]
   );
 
-  const amountNumber = useMemo(() => cryptoAmount.toFixed(2), [cryptoAmount]);
+  const amountNumber = useMemo(() => {
+    // приводим к number максимально безопасно
+    if (cryptoAmount === null || cryptoAmount === undefined) {
+      return "0.000000";
+    }
+
+    if (typeof cryptoAmount === "number") {
+      return Number.isFinite(cryptoAmount)
+        ? cryptoAmount.toFixed(6)
+        : "0.000000";
+    }
+
+    // всё остальное приводим через String()
+    const parsed = Number(String(cryptoAmount).replace(",", "."));
+
+    return Number.isFinite(parsed) ? parsed.toFixed(6) : "0.000000";
+  }, [cryptoAmount]);
+
   const amountText = useMemo(
     () => `${amountNumber} ${token}`,
     [amountNumber, token]

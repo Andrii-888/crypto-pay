@@ -43,7 +43,6 @@ const buttonLabel = (n: "TRON" | "ETH") =>
 function sanitizeAmount(v: number) {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  // 2 decimals as canonical "checkout amount"
   return Math.round(n * 100) / 100;
 }
 
@@ -77,6 +76,11 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
     [amount]
   );
 
+  // ✅ final pair enforcement (USDC only ETH)
+  const effectiveNetwork: "TRON" | "ETH" = useMemo(() => {
+    return token === "USDC" ? "ETH" : network;
+  }, [token, network]);
+
   async function handleCreateInvoice() {
     const amountToSend = sanitizeAmount(amount);
 
@@ -85,13 +89,11 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
       return;
     }
 
-    // ✅ enforce token->network pairing (hard safety)
-    const safeNetwork: "TRON" | "ETH" = token === "USDT" ? "TRON" : "ETH";
-
     setLoading(true);
     setError(null);
 
     try {
+      // ✅ PSP-core expects "TRON" | "ETH" (not lowercase)
       const res = await fetch("/api/payments/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -99,7 +101,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
           amount: amountToSend,
           currency: "EUR",
           asset: token,
-          network: safeNetwork.toLowerCase(),
+          network: effectiveNetwork,
           description: "checkout demo",
         }),
       });
@@ -234,12 +236,16 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
               <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px]">
                 <button
                   type="button"
-                  onClick={() => setNetwork("TRON")}
+                  onClick={() => {
+                    if (token === "USDC") return;
+                    setNetwork("TRON");
+                  }}
                   disabled={token === "USDC"}
+                  aria-disabled={token === "USDC"}
                   className={`px-3 py-1.5 rounded-full transition ${
-                    network === "TRON"
+                    effectiveNetwork === "TRON"
                       ? "bg-white shadow-sm text-slate-900"
-                      : "text-slate-500"
+                      : "text-slate-500 hover:text-slate-700"
                   } ${token === "USDC" ? "opacity-40 cursor-not-allowed" : ""}`}
                 >
                   TRON (TRC20)
@@ -247,12 +253,16 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
 
                 <button
                   type="button"
-                  onClick={() => setNetwork("ETH")}
+                  onClick={() => {
+                    if (token === "USDT") return;
+                    setNetwork("ETH");
+                  }}
                   disabled={token === "USDT"}
+                  aria-disabled={token === "USDT"}
                   className={`px-3 py-1.5 rounded-full transition ${
-                    network === "ETH"
+                    effectiveNetwork === "ETH"
                       ? "bg-white shadow-sm text-slate-900"
-                      : "text-slate-500"
+                      : "text-slate-500 hover:text-slate-700"
                   } ${token === "USDT" ? "opacity-40 cursor-not-allowed" : ""}`}
                 >
                   Ethereum (ERC20)
@@ -293,7 +303,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
               disabled={loading || amount <= 0}
               className="inline-flex items-center justify-center rounded-full bg-black text-white px-4 py-2.5 text-sm font-medium hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed transition"
             >
-              {loading ? "Creating invoice..." : buttonLabel(network)}
+              {loading ? "Creating invoice..." : buttonLabel(effectiveNetwork)}
             </button>
 
             <p className="text-[11px] text-center text-slate-400 leading-relaxed">

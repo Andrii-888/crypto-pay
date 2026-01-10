@@ -1,7 +1,10 @@
 // app/api/payments/create/route.ts
 import { NextResponse } from "next/server";
 
-const BUILD_STAMP = "create-route-v3-2026-01-02__A1";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const BUILD_STAMP = "create-route-v4-2026-01-10__NET_UPPERCASE";
 
 const PSP_API_URL = (process.env.PSP_API_URL ?? "").replace(/\/+$/, "");
 const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
@@ -13,7 +16,7 @@ type CreateBody = {
   amount?: number | string;
   currency?: string;
   asset?: string;
-  network?: string;
+  network?: string; // UI may send: "tron"/"trc20"/"eth"/"erc20"/"ethereum"
   description?: string;
 };
 
@@ -77,18 +80,28 @@ function normalizeCryptoCurrency(v: unknown): "USDT" | "USDC" | null {
   return null;
 }
 
-function normalizeNetwork(v: unknown): string | null {
+/**
+ * IMPORTANT: psp-core expects chain values: "TRON" | "ETH"
+ * UI may send: tron/trc20, eth/erc20/ethereum, TRON/ETH etc.
+ */
+function normalizeNetworkChain(v: unknown): "TRON" | "ETH" | null {
+  if (v === null || v === undefined) return null;
   if (typeof v !== "string") return null;
-  const s = v.trim().toLowerCase();
-  return s.length ? s : null;
+
+  const s = v.trim().toUpperCase();
+  if (!s) return null;
+
+  if (s === "TRON" || s === "TRC20") return "TRON";
+  if (s === "ETH" || s === "ERC20" || s === "ETHEREUM") return "ETH";
+
+  // unknown -> let psp-core validate, but better to return null so we don't send garbage
+  return null;
 }
 
 function pickMerchantId(): string | null {
   if (PSP_MERCHANT_ID_RAW) return PSP_MERCHANT_ID_RAW;
 
-  // dev fallback (чтобы “поехало” сразу) — но лучше выставить PSP_MERCHANT_ID явно
-  if (process.env.NODE_ENV === "development") return "m_test_1";
-
+  // ❗️no hidden dev fallback here — it causes confusing 401s
   return null;
 }
 
@@ -137,7 +150,7 @@ export async function POST(req: Request) {
       buildStamp: BUILD_STAMP,
       error: "PSP_MERCHANT_ID is empty",
       details:
-        "Set PSP_MERCHANT_ID in .env.local (must exist in psp-core merchants table)",
+        "Set PSP_MERCHANT_ID in .env.local (must match psp-core merchant)",
     };
     return NextResponse.json(res, { status: 500 });
   }
@@ -152,7 +165,7 @@ export async function POST(req: Request) {
   const fiatAmount = parseNumberLike(body.amount);
   const fiatCurrency = normalizeCurrency3(body.currency);
   const cryptoCurrency = normalizeCryptoCurrency(body.asset);
-  const network = normalizeNetwork(body.network);
+  const networkChain = normalizeNetworkChain(body.network);
   const description =
     typeof body.description === "string" && body.description.trim()
       ? body.description.trim()
@@ -188,18 +201,30 @@ export async function POST(req: Request) {
     return NextResponse.json(res, { status: 400 });
   }
 
-  // network может быть опциональным — но мы передаём, если есть
+  // ✅ enforce allowed pairs early (same rule you saw in psp-core error)
+  if (cryptoCurrency === "USDC" && networkChain === "TRON") {
+    const res: ErrResponse = {
+      ok: false,
+      buildStamp: BUILD_STAMP,
+      error: "Invalid crypto/network pair",
+      details: "USDC + TRON is not supported. Use USDC + ETH.",
+    };
+    return NextResponse.json(res, { status: 400 });
+  }
+
+  // network optional: if missing -> let psp-core decide defaults (or error)
   const payload: Record<string, unknown> = {
     fiatAmount,
     fiatCurrency,
     cryptoCurrency,
-    // важно для трассировки в psp-core логах
     metadata: {
       source: "crypto-pay",
       buildStamp: BUILD_STAMP,
     },
   };
-  if (network) payload.network = network;
+
+  // ✅ send only valid chain values ("TRON" | "ETH")
+  if (networkChain) payload.network = networkChain;
   if (description) payload.description = description;
 
   const controller = new AbortController();
@@ -226,16 +251,20 @@ export async function POST(req: Request) {
 
     if (!pspRes.ok) {
       const details = await safeReadBody(pspRes);
+
+      // ⚠️ return the same status instead of always 502 (easier debugging)
+      const status = pspRes.status;
+
       const res: ErrResponse = {
         ok: false,
         buildStamp: BUILD_STAMP,
         error: "PSP_ERROR",
-        message: `PSP responded ${pspRes.status}`,
-        backendStatus: `HTTP ${pspRes.status}`,
+        message: `PSP responded ${status}`,
+        backendStatus: `HTTP ${status}`,
         details,
         pspApiUrl: PSP_API_URL,
       };
-      return NextResponse.json(res, { status: 502 });
+      return NextResponse.json(res, { status });
     }
 
     const raw = (await pspRes.json().catch(() => ({}))) as unknown;

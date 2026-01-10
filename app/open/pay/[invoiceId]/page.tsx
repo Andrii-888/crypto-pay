@@ -12,55 +12,11 @@ type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 type TxStatus = "pending" | "detected" | "confirmed";
 
 type StatusApiOk = {
   ok: true;
-  invoiceId: string;
-  status: InvoiceStatus;
-
-  createdAt?: string | null;
-  expiresAt?: string | null;
-  paymentUrl?: string | null;
-  merchantId?: string | null;
-
-  fiatAmount?: number | null;
-  fiatCurrency?: string | null;
-
-  cryptoAmount?: number | null;
-  cryptoCurrency?: string | null;
-
-  network?: string | null;
-
-  grossAmount?: number | null;
-  feeAmount?: number | null;
-  netAmount?: number | null;
-  feeBps?: number | null;
-  feePayer?: string | null;
-
-  fxRate?: number | null;
-  fxPair?: string | null;
-
-  txStatus?: string | null;
-  txHash?: string | null;
-  walletAddress?: string | null;
-  confirmations?: number | null;
-  requiredConfirmations?: number | null;
-
-  detectedAt?: string | null;
-  confirmedAt?: string | null;
-
-  amlStatus?: string | null;
-  riskScore?: number | null;
-  assetStatus?: string | null;
-  assetRiskScore?: number | null;
-
-  decisionStatus?: string | null;
-  decisionReasonCode?: string | null;
-  decisionReasonText?: string | null;
-  decidedAt?: string | null;
-  decidedBy?: string | null;
+  invoice: unknown;
 };
 
 function normalizeParam(v: string | string[] | undefined) {
@@ -70,10 +26,11 @@ function normalizeParam(v: string | string[] | undefined) {
 
 function isStatusApiOk(x: unknown): x is StatusApiOk {
   if (!x || typeof x !== "object") return false;
-  return (x as { ok?: unknown }).ok === true;
+  const o = x as { ok?: unknown; invoice?: unknown };
+  return o.ok === true && o.invoice != null;
 }
 
-function normalizeTxStatus(v?: string | null): TxStatus {
+function normalizeTxStatus(v?: unknown): TxStatus {
   const s = String(v ?? "pending")
     .trim()
     .toLowerCase();
@@ -82,26 +39,36 @@ function normalizeTxStatus(v?: string | null): TxStatus {
   return "pending";
 }
 
-function strOrUndef(v?: string | null): string | undefined {
+function strOrUndef(v?: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
   const s = v.trim();
   return s.length ? s : undefined;
 }
 
-function numOrUndef(v?: number | null): number | undefined {
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+function numOrUndef(v?: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v.replace(",", "."));
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+function asObject(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
 }
 
 async function fetchInvoiceSnapshot(
   invoiceId: string
-): Promise<StatusApiOk | null> {
+): Promise<unknown | null> {
   if (!invoiceId) return null;
 
   const h = await headers();
   const host = h.get("x-forwarded-host") || h.get("host");
   const proto = h.get("x-forwarded-proto") || "http";
 
-  const baseUrl = host ? `${proto}://${host}` : "http://localhost:3000";
+  // IMPORTANT: fallback should match local dev port
+  const baseUrl = host ? `${proto}://${host}` : "http://localhost:3002";
 
   const url = `${baseUrl}/api/payments/status?invoiceId=${encodeURIComponent(
     invoiceId
@@ -113,7 +80,7 @@ async function fetchInvoiceSnapshot(
   const data = (await res.json().catch(() => null)) as unknown;
   if (!isStatusApiOk(data)) return null;
 
-  return data;
+  return data.invoice ?? null;
 }
 
 export async function generateMetadata({
@@ -157,93 +124,89 @@ export default async function PaymentPage({ params, searchParams }: PageProps) {
 
   if (!finalInvoiceId) return <NotFoundUI />;
 
-  const snap = await fetchInvoiceSnapshot(finalInvoiceId);
-  if (!snap) return <NotFoundUI invoiceId={finalInvoiceId} />;
+  const raw = await fetchInvoiceSnapshot(finalInvoiceId);
+  if (!raw) return <NotFoundUI invoiceId={finalInvoiceId} />;
 
-  // Собираем InvoiceData аккуратно:
-  // - ключи со строгими типами НЕ получают null
-  // - если значения нет -> просто не добавляем поле (undefined)
+  const inv = asObject(raw);
+  const pay = asObject(inv.pay);
+
   const initialInvoice: InvoiceData = {
-    invoiceId: snap.invoiceId ?? finalInvoiceId,
-    status: snap.status ?? "waiting",
-    txStatus: normalizeTxStatus(snap.txStatus) as InvoiceData["txStatus"],
+    invoiceId: (strOrUndef(inv.id) ??
+      finalInvoiceId) as InvoiceData["invoiceId"],
+    status: (strOrUndef(inv.status) ?? "waiting") as InvoiceData["status"],
+    txStatus: normalizeTxStatus(inv.txStatus) as InvoiceData["txStatus"],
 
-    // если в InvoiceData эти поля обязательные — оставляем безопасные дефолты:
-    paymentUrl: (strOrUndef(snap.paymentUrl) ??
-      "") as InvoiceData["paymentUrl"],
-    merchantId: (strOrUndef(snap.merchantId) ??
-      "") as InvoiceData["merchantId"],
+    paymentUrl: (strOrUndef(inv.paymentUrl) ?? "") as InvoiceData["paymentUrl"],
+    merchantId: (strOrUndef(inv.merchantId) ?? "") as InvoiceData["merchantId"],
 
-    createdAt: (strOrUndef(snap.createdAt) ??
+    createdAt: (strOrUndef(inv.createdAt) ??
       undefined) as InvoiceData["createdAt"],
-    expiresAt: (strOrUndef(snap.expiresAt) ??
+    expiresAt: (strOrUndef(inv.expiresAt) ??
       undefined) as InvoiceData["expiresAt"],
 
-    fiatAmount: (numOrUndef(snap.fiatAmount) ??
+    fiatAmount: (numOrUndef(inv.fiatAmount) ??
       undefined) as InvoiceData["fiatAmount"],
-    fiatCurrency: (strOrUndef(snap.fiatCurrency) ??
+    fiatCurrency: (strOrUndef(inv.fiatCurrency) ??
       undefined) as InvoiceData["fiatCurrency"],
 
-    cryptoAmount: (numOrUndef(snap.cryptoAmount) ??
-      undefined) as InvoiceData["cryptoAmount"],
-    cryptoCurrency: (strOrUndef(snap.cryptoCurrency) ??
+    // amount to pay comes from provider payload (string) — UI already handles string/number safely
+    cryptoAmount: (strOrUndef(pay.amount) ??
+      numOrUndef(inv.cryptoAmount)) as unknown as InvoiceData["cryptoAmount"],
+    cryptoCurrency: (strOrUndef(inv.cryptoCurrency) ??
+      strOrUndef(pay.currency) ??
       undefined) as InvoiceData["cryptoCurrency"],
 
-    network: (strOrUndef(snap.network) ?? undefined) as InvoiceData["network"],
+    network: (strOrUndef(inv.network) ??
+      strOrUndef(pay.network) ??
+      undefined) as InvoiceData["network"],
 
-    grossAmount: (numOrUndef(snap.grossAmount) ??
+    grossAmount: (numOrUndef(inv.grossAmount) ??
       undefined) as InvoiceData["grossAmount"],
-    feeAmount: (numOrUndef(snap.feeAmount) ??
+    feeAmount: (numOrUndef(inv.feeAmount) ??
       undefined) as InvoiceData["feeAmount"],
-    netAmount: (numOrUndef(snap.netAmount) ??
+    netAmount: (numOrUndef(inv.netAmount) ??
       undefined) as InvoiceData["netAmount"],
-    feeBps: (numOrUndef(snap.feeBps) ?? undefined) as InvoiceData["feeBps"],
-    feePayer: (strOrUndef(snap.feePayer) ??
+    feeBps: (numOrUndef(inv.feeBps) ?? undefined) as InvoiceData["feeBps"],
+    feePayer: (strOrUndef(inv.feePayer) ??
       undefined) as InvoiceData["feePayer"],
 
-    fxRate: (numOrUndef(snap.fxRate) ?? undefined) as InvoiceData["fxRate"],
-    fxPair: (strOrUndef(snap.fxPair) ?? undefined) as InvoiceData["fxPair"],
+    fxRate: (numOrUndef(inv.fxRate) ?? undefined) as InvoiceData["fxRate"],
+    fxPair: (strOrUndef(inv.fxPair) ?? undefined) as InvoiceData["fxPair"],
 
-    txHash: (strOrUndef(snap.txHash) ?? undefined) as InvoiceData["txHash"],
-    walletAddress: (strOrUndef(snap.walletAddress) ??
+    txHash: (strOrUndef(inv.txHash) ?? undefined) as InvoiceData["txHash"],
+    walletAddress: (strOrUndef(inv.walletAddress) ??
+      strOrUndef(pay.address) ??
       undefined) as InvoiceData["walletAddress"],
-    confirmations: (numOrUndef(snap.confirmations) ??
+    confirmations: (numOrUndef(inv.confirmations) ??
       undefined) as InvoiceData["confirmations"],
-    requiredConfirmations: (numOrUndef(snap.requiredConfirmations) ??
+    requiredConfirmations: (numOrUndef(inv.requiredConfirmations) ??
       undefined) as InvoiceData["requiredConfirmations"],
 
-    detectedAt: (strOrUndef(snap.detectedAt) ??
+    detectedAt: (strOrUndef(inv.detectedAt) ??
       undefined) as InvoiceData["detectedAt"],
-    confirmedAt: (strOrUndef(snap.confirmedAt) ??
+    confirmedAt: (strOrUndef(inv.confirmedAt) ??
       undefined) as InvoiceData["confirmedAt"],
 
-    // ⬇️ ВАЖНО: никаких ?? null
-    amlStatus: (strOrUndef(snap.amlStatus) ??
+    amlStatus: (strOrUndef(inv.amlStatus) ??
       undefined) as InvoiceData["amlStatus"],
-    riskScore: (numOrUndef(snap.riskScore) ??
+    riskScore: (numOrUndef(inv.riskScore) ??
       undefined) as InvoiceData["riskScore"],
-    assetStatus: (strOrUndef(snap.assetStatus) ??
+    assetStatus: (strOrUndef(inv.assetStatus) ??
       undefined) as InvoiceData["assetStatus"],
-    assetRiskScore: (numOrUndef(snap.assetRiskScore) ??
+    assetRiskScore: (numOrUndef(inv.assetRiskScore) ??
       undefined) as InvoiceData["assetRiskScore"],
 
-    decisionStatus: (strOrUndef(snap.decisionStatus) ??
+    decisionStatus: (strOrUndef(inv.decisionStatus) ??
       undefined) as InvoiceData["decisionStatus"],
-    decisionReasonCode: (strOrUndef(snap.decisionReasonCode) ??
+    decisionReasonCode: (strOrUndef(inv.decisionReasonCode) ??
       undefined) as InvoiceData["decisionReasonCode"],
-    decisionReasonText: (strOrUndef(snap.decisionReasonText) ??
+    decisionReasonText: (strOrUndef(inv.decisionReasonText) ??
       undefined) as InvoiceData["decisionReasonText"],
-    decidedAt: (strOrUndef(snap.decidedAt) ??
+    decidedAt: (strOrUndef(inv.decidedAt) ??
       undefined) as InvoiceData["decidedAt"],
-    decidedBy: (strOrUndef(snap.decidedBy) ??
+    decidedBy: (strOrUndef(inv.decidedBy) ??
       undefined) as InvoiceData["decidedBy"],
   };
 
-  return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="max-w-xl mx-auto px-4 py-10 lg:py-12">
-        <CryptoPayPaymentClient initialInvoice={initialInvoice} />
-      </div>
-    </main>
-  );
+  return <CryptoPayPaymentClient initialInvoice={initialInvoice} />;
 }

@@ -48,9 +48,10 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
 
   const invoiceId = (invoice.invoiceId ?? "").trim();
 
-  // show instructions unless link is dead
-  const showInstructions =
-    invoice.status !== "expired" && invoice.status !== "rejected";
+  const isExpired = invoice.status === "expired";
+  const isRejected = invoice.status === "rejected";
+  const isConfirmed = invoice.status === "confirmed";
+  const isDead = isExpired || isRejected;
 
   const pay = readPay(invoice);
 
@@ -60,7 +61,6 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
     invoice.walletAddress ??
     ""
   ).trim();
-
   const effectiveNetwork = (pay?.network ?? invoice.network ?? "").trim();
 
   // wallet instructions require address to be actually useful
@@ -77,68 +77,82 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
     setInvoice(patch);
   };
 
-  // Hard stop: don’t render payment UI until we actually have invoiceId.
+  // Loading state — keep it inside same layout width
   if (!invoiceId) {
     return (
-      <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-        <div className="text-sm font-semibold text-slate-900">
-          Loading payment…
+      <main className="min-h-screen bg-slate-50">
+        <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+            <div className="text-sm font-semibold text-slate-900">
+              Loading payment…
+            </div>
+            <div className="mt-1 text-xs text-slate-600">
+              Preparing invoice details…
+            </div>
+            <div className="mt-2 text-[11px] text-slate-500">
+              Keep this page open — it updates automatically.
+            </div>
+          </section>
         </div>
-        <div className="mt-1 text-xs text-slate-600">
-          Preparing invoice details…
-        </div>
-        <div className="mt-2 text-[11px] text-slate-500">
-          Keep this page open — it updates automatically.
-        </div>
-      </section>
+      </main>
     );
   }
 
   return (
-    <>
-      <CryptoPayHeader invoiceId={invoiceId} />
+    <main className="min-h-screen bg-slate-50">
+      {/* container: centered + max width + padding for all screens */}
+      <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
+        {/* Keep previous spacing logic: header -> status -> content */}
+        <div className="space-y-4 sm:space-y-6">
+          <CryptoPayHeader invoiceId={invoiceId} />
 
-      <CryptoPayStatusWithPolling
-        invoiceId={invoiceId}
-        initialStatus={invoice.status}
-        expiresAt={invoice.expiresAt ?? ""}
-        onInvoiceUpdate={handleInvoiceUpdate}
-      />
+          <CryptoPayStatusWithPolling
+            invoiceId={invoiceId}
+            initialStatus={invoice.status}
+            expiresAt={invoice.expiresAt ?? ""}
+            onInvoiceUpdate={handleInvoiceUpdate}
+          />
 
-      <div className="mt-3 mb-4">
-        {(invoice.status === "expired" || invoice.status === "rejected") && (
-          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-            <div className="font-semibold mb-0.5">Payment not completed</div>
-            <div>
-              This payment link is no longer valid. Please return to the store
-              checkout and create a new payment.
-            </div>
+          <div className="space-y-3">
+            {isDead && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 shadow-sm px-4 py-3 text-sm text-rose-800 sm:px-5">
+                <div className="font-semibold mb-0.5">
+                  Payment not completed
+                </div>
+                <div>
+                  This payment link is no longer valid. You can still see the
+                  payment details below. To pay, please return to the store
+                  checkout and create a new payment.
+                </div>
+              </div>
+            )}
+
+            {/* confirmed redirect happens automatically in polling component */}
+            {isConfirmed && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 shadow-sm px-4 py-3 text-sm text-emerald-800 sm:px-5">
+                <div className="font-semibold mb-0.5">Payment confirmed</div>
+                <div>Redirecting to the success page…</div>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* NOTE: confirmed redirect happens automatically in polling component */}
-        {invoice.status === "confirmed" && (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            <div className="font-semibold mb-0.5">Payment confirmed</div>
-            <div>Redirecting to the success page…</div>
-          </div>
-        )}
-      </div>
+          <div className="space-y-4">
+            <CryptoPayAmountCard
+              fiatAmount={invoice.fiatAmount}
+              fiatCurrency={invoice.fiatCurrency}
+              cryptoAmount={invoice.cryptoAmount}
+              cryptoCurrency={invoice.cryptoCurrency}
+            />
 
-      <div className="space-y-4">
-        <CryptoPayAmountCard
-          fiatAmount={invoice.fiatAmount}
-          fiatCurrency={invoice.fiatCurrency}
-          cryptoAmount={invoice.cryptoAmount}
-          cryptoCurrency={invoice.cryptoCurrency}
-        />
+            {/* Timer only makes sense when invoice is not final */}
+            {!isConfirmed && !isDead ? (
+              <CryptoPayTimer expiresAt={invoice.expiresAt} />
+            ) : null}
 
-        {showInstructions && (
-          <>
-            <CryptoPayTimer expiresAt={invoice.expiresAt} />
-
+            {/* Always render wallet section area (even if expired/rejected),
+                so address/QR is visible for UX/debug. */}
             {!hasPaymentAddress ? (
-              <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
                 <div className="text-sm font-semibold text-slate-900">
                   Payment instructions
                 </div>
@@ -158,10 +172,10 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
                 network={effectiveNetwork}
               />
             )}
-          </>
-        )}
+          </div>
+        </div>
       </div>
-    </>
+    </main>
   );
 }
 

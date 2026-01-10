@@ -60,13 +60,25 @@ type StatusResponseOk = {
   [k: string]: unknown;
 };
 
+type StatusResponseNew = {
+  ok: true;
+  invoice: Record<string, unknown>;
+};
+
 function isObject(x: unknown): x is Record<string, unknown> {
   return !!x && typeof x === "object";
 }
 
-function isStatusOk(x: unknown): x is StatusResponseOk {
+function isStatusOk(x: unknown): x is StatusResponseOk | StatusResponseNew {
   if (!isObject(x)) return false;
-  return x.ok === true && typeof x.invoiceId === "string";
+
+  // old shape: { ok:true, invoiceId:"..." }
+  if (x.ok === true && typeof x.invoiceId === "string") return true;
+
+  // new shape: { ok:true, invoice:{...} }
+  if (x.ok === true && isObject(x.invoice)) return true;
+
+  return false;
 }
 
 function getErrorMessage(x: unknown): string | null {
@@ -105,6 +117,12 @@ function asString(v: unknown): string | null {
 
 function asNumber(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const s = v.trim().replace(",", ".");
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
   return null;
 }
 
@@ -160,6 +178,73 @@ function extractInvoicePatch(data: StatusResponseOk): Partial<InvoiceView> {
   };
 }
 
+function normalizeStatusResponse(
+  data: StatusResponseOk | StatusResponseNew,
+  fallbackId: string
+): StatusResponseOk {
+  // new shape: { ok:true, invoice:{...} } → normalize to old shape
+  if (isObject((data as StatusResponseNew).invoice)) {
+    const inv = (data as StatusResponseNew).invoice;
+
+    return {
+      ok: true,
+      invoiceId: String(inv.id ?? fallbackId),
+
+      status: inv.status,
+      txStatus: inv.txStatus,
+
+      createdAt: inv.createdAt,
+      expiresAt: inv.expiresAt,
+      paymentUrl: inv.paymentUrl,
+
+      merchantId: inv.merchantId,
+
+      fiatAmount: inv.fiatAmount,
+      fiatCurrency: inv.fiatCurrency,
+
+      cryptoAmount: inv.cryptoAmount,
+      cryptoCurrency: inv.cryptoCurrency,
+
+      fees: {
+        grossAmount: inv.grossAmount,
+        feeAmount: inv.feeAmount,
+        netAmount: inv.netAmount,
+        feeBps: inv.feeBps,
+        feePayer: inv.feePayer,
+      },
+
+      fxRate: inv.fxRate,
+      fxPair: inv.fxPair,
+
+      network: inv.network,
+
+      txHash: inv.txHash,
+      walletAddress: inv.walletAddress,
+
+      confirmations: inv.confirmations,
+      requiredConfirmations: inv.requiredConfirmations,
+
+      detectedAt: inv.detectedAt,
+      confirmedAt: inv.confirmedAt,
+
+      amlStatus: inv.amlStatus,
+      riskScore: inv.riskScore,
+
+      assetStatus: inv.assetStatus,
+      assetRiskScore: inv.assetRiskScore,
+
+      decisionStatus: inv.decisionStatus,
+      decisionReasonCode: inv.decisionReasonCode,
+      decisionReasonText: inv.decisionReasonText,
+      decidedAt: inv.decidedAt,
+      decidedBy: inv.decidedBy,
+    };
+  }
+
+  // old shape: already ok
+  return data as StatusResponseOk;
+}
+
 function SuccessInner({ id }: { id: string }) {
   const [invoice, setInvoice] = useState<InvoiceView>(() => ({
     invoiceId: id,
@@ -211,14 +296,16 @@ function SuccessInner({ id }: { id: string }) {
           return;
         }
 
-        setDebugInvoice(data);
+        const normalized = normalizeStatusResponse(data, id);
 
-        const nextStatus = normalizeInvoiceStatus(data.status);
-        const nextTxStatus = normalizeTxStatus(data.txStatus);
+        setDebugInvoice(normalized);
+
+        const nextStatus = normalizeInvoiceStatus(normalized.status);
+        const nextTxStatus = normalizeTxStatus(normalized.txStatus);
 
         statusRef.current = nextStatus;
 
-        const patch = extractInvoicePatch(data);
+        const patch = extractInvoicePatch(normalized);
 
         setInvoice((prev) => ({
           ...prev,
@@ -389,7 +476,6 @@ function SuccessInner({ id }: { id: string }) {
         </section>
       ) : null}
 
-      {/* DebugPanel — НЕ ПРЯЧЕМ НИГДЕ */}
       <DebugPanel
         open={debugOpen}
         snapshot={debugInvoice}
