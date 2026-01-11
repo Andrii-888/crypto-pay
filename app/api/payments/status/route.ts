@@ -1,8 +1,10 @@
-// app/api/payments/status/route.ts
+//app/api/payments/status/route.ts
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const BUILD_STAMP = "status-route-v2-2026-01-11__PASS_THRU_STATUS";
 
 const PSP_API_URL = (process.env.PSP_API_URL ?? "").replace(/\/+$/, "");
 const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
@@ -10,25 +12,24 @@ const PSP_MERCHANT_ID = (process.env.PSP_MERCHANT_ID ?? "").trim();
 
 type ErrResponse = {
   ok: false;
-  error: string;
+  buildStamp?: string;
+  error: "bad_request" | "config" | "psp_core_error" | "network_error";
   message?: string;
   details?: string;
   pspApiUrl?: string;
+  backendStatus?: string;
 };
 
 type StatusOkResponse = {
   ok: true;
+  buildStamp?: string;
   invoice: unknown;
 };
 
-async function safeReadBody(res: Response): Promise<string | undefined> {
-  const ct = res.headers.get("content-type") ?? "";
-  if (ct.includes("application/json")) {
-    const json: unknown = await res.json().catch(() => null);
-    return json ? JSON.stringify(json).slice(0, 2000) : undefined;
-  }
-  const text = await res.text().catch(() => "");
-  return text ? text.slice(0, 2000) : undefined;
+function sliceDetails(v: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined;
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return s ? s.slice(0, 2000) : undefined;
 }
 
 export async function GET(req: Request) {
@@ -37,21 +38,39 @@ export async function GET(req: Request) {
 
   if (!invoiceId) {
     return NextResponse.json<ErrResponse>(
-      { ok: false, error: "bad_request", message: "Missing invoiceId" },
+      {
+        ok: false,
+        buildStamp: BUILD_STAMP,
+        error: "bad_request",
+        message: "Missing invoiceId",
+      },
       { status: 400 }
     );
   }
 
   if (!PSP_API_URL) {
     return NextResponse.json<ErrResponse>(
-      { ok: false, error: "config", message: "Missing PSP_API_URL" },
+      {
+        ok: false,
+        buildStamp: BUILD_STAMP,
+        error: "config",
+        message: "Missing PSP_API_URL",
+        details: "Set PSP_API_URL in .env.local and restart",
+      },
       { status: 500 }
     );
   }
 
   if (!PSP_MERCHANT_ID || !PSP_API_KEY) {
     return NextResponse.json<ErrResponse>(
-      { ok: false, error: "config", message: "Missing PSP auth env vars" },
+      {
+        ok: false,
+        buildStamp: BUILD_STAMP,
+        error: "config",
+        message: "Missing PSP auth env vars",
+        details:
+          "Set PSP_MERCHANT_ID and PSP_API_KEY in .env.local and restart",
+      },
       { status: 500 }
     );
   }
@@ -61,56 +80,68 @@ export async function GET(req: Request) {
   try {
     const r = await fetch(url, {
       method: "GET",
+      cache: "no-store",
       headers: {
+        Accept: "application/json",
         "x-merchant-id": PSP_MERCHANT_ID,
         "x-api-key": PSP_API_KEY,
       },
-      cache: "no-store",
     });
 
+    // Read once, then decide how to parse
     const contentType = r.headers.get("content-type") ?? "";
-    const payloadText = await r.text();
+    const rawText = await r.text();
 
-    const payload: unknown = contentType.includes("application/json")
-      ? (() => {
-          try {
-            return JSON.parse(payloadText) as unknown;
-          } catch {
-            return payloadText;
-          }
-        })()
-      : payloadText;
+    let payload: unknown = rawText;
+    if (contentType.includes("application/json")) {
+      try {
+        payload = JSON.parse(rawText) as unknown;
+      } catch {
+        payload = rawText; // keep as text if JSON parsing fails
+      }
+    }
 
     if (!r.ok) {
-      // details берём безопасно, без any
-      const details =
-        payloadText?.slice(0, 2000) ||
-        (await safeReadBody(new Response(payloadText, { headers: r.headers })));
+      // ✅ Pass-through real PSP status for correct debugging + UI logic
+      const status = r.status;
 
       return NextResponse.json<ErrResponse>(
         {
           ok: false,
+          buildStamp: BUILD_STAMP,
           error: "psp_core_error",
-          message: `PSP-Core responded with ${r.status}`,
-          details,
+          message: `PSP-Core responded with ${status}`,
+          backendStatus: `HTTP ${status}`,
+          details: sliceDetails(payload),
           pspApiUrl: PSP_API_URL,
         },
-        { status: 502 }
+        { status }
       );
     }
 
-    return NextResponse.json<StatusOkResponse>(
-      { ok: true, invoice: payload },
+    const out = NextResponse.json<StatusOkResponse>(
+      {
+        ok: true,
+        buildStamp: BUILD_STAMP,
+        invoice: payload,
+      },
       { status: 200 }
     );
+    out.headers.set("Cache-Control", "no-store");
+    return out;
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : "Failed to reach PSP-Core";
+    const details =
+      e instanceof Error
+        ? `${e.name}: ${e.message}`.slice(0, 300)
+        : String(e ?? "Unknown error").slice(0, 300);
 
     return NextResponse.json<ErrResponse>(
       {
         ok: false,
+        buildStamp: BUILD_STAMP,
         error: "network_error",
-        message,
+        message: "Failed to reach PSP-Core",
+        details,
         pspApiUrl: PSP_API_URL,
       },
       { status: 502 }
