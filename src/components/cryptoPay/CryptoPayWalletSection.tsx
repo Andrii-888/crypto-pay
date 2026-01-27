@@ -160,7 +160,10 @@ export function CryptoPayWalletSection({
   }
 
   async function handleConfirmDemoPayment() {
-    setConfirmError("Demo confirm is disabled.");
+    if (!invoiceId || isConfirming) return;
+
+    // Presentation mode: just move to processing without calling any demo API.
+    router.push(`/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`);
   }
 
   // IMPORTANT: early-return ONLY after all hooks above (rules-of-hooks)
