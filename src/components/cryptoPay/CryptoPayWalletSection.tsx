@@ -160,53 +160,7 @@ export function CryptoPayWalletSection({
   }
 
   async function handleConfirmDemoPayment() {
-    if (!invoiceId || isConfirming) return;
-
-    setIsConfirming(true);
-    setConfirmError(null);
-
-    try {
-      const res = await fetch("/api/payments/simulate-paid", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoiceId }),
-      });
-
-      const data = (await res
-        .json()
-        .catch(() => ({ ok: false, error: "Invalid JSON response" }))) as
-        | SimulatePaidResponse
-        | { ok: false; error: string; message?: string };
-
-      if (!res.ok) {
-        const message =
-          "message" in data && typeof data.message === "string"
-            ? data.message
-            : "error" in data && typeof data.error === "string"
-            ? data.error
-            : `Request failed: HTTP ${res.status}`;
-
-        setConfirmError(message);
-      } else if ("ok" in data && data.ok === false) {
-        const msg =
-          (data as SimulatePaidError).details ||
-          (data as SimulatePaidError).error ||
-          "Simulate paid failed";
-
-        setConfirmError(msg);
-      }
-
-      router.push(
-        `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
-      );
-    } catch (e) {
-      setConfirmError(e instanceof Error ? e.message : "Unknown error");
-      router.push(
-        `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
-      );
-    } finally {
-      setIsConfirming(false);
-    }
+    setConfirmError("Demo confirm is disabled.");
   }
 
   // IMPORTANT: early-return ONLY after all hooks above (rules-of-hooks)
