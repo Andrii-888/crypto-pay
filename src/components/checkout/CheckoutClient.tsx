@@ -99,7 +99,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: amountToSend,
-          currency: "EUR",
+          currency: "CHF",
           asset: token,
           network: effectiveNetwork,
           description: "checkout demo",
@@ -177,7 +177,7 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-500">Total amount</span>
               <span className="text-lg font-semibold text-slate-900">
-                €{displayAmount}
+                {displayAmount} CHF
               </span>
             </div>
 

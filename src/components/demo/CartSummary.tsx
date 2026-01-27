@@ -17,7 +17,7 @@ export function CartSummary({ cartTotal, cartCount }: CartSummaryProps) {
       <div className="flex items-center justify-between">
         <span className="text-sm text-slate-500">Total</span>
         <span className="text-lg font-semibold text-slate-900">
-          €{cartTotal.toFixed(2)}
+          {cartTotal.toFixed(2)} CHF
         </span>
       </div>
       <p className="text-xs text-slate-400">

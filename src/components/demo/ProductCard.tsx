@@ -31,7 +31,7 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
             {product.name}
           </h2>
           <span className="shrink-0 text-sm font-semibold text-slate-900 whitespace-nowrap">
-            €{product.price.toFixed(2)}
+            {product.price.toFixed(2)} CHF
           </span>
         </div>
 

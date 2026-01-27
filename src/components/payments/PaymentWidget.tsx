@@ -144,7 +144,7 @@ export default function PaymentWidget({
             <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-600 space-y-1.5">
               <p>• Provider locks the crypto rate for a short time window.</p>
               <p>• Customer pays in USDT/USDC from their own wallet.</p>
-              <p>• You receive EUR/CHF on your business account (or USDT).</p>
+              <p>• You receive CHF on your business account (or USDT).</p>
             </div>
 
             {/* Status bar */}

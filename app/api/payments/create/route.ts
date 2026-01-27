@@ -14,7 +14,7 @@ const IS_PROD = process.env.NODE_ENV === "production";
 
 type CreateBody = {
   amount?: number | string;
-  currency?: string; // fiat currency (USD/EUR/CHF)
+  currency?: string; // fiat currency (CHF-only)
   asset?: string; // USDT/USDC
   network?: string; // UI may send: "tron"/"trc20"/"eth"/"erc20"/"ethereum"
   description?: string;
@@ -193,7 +193,22 @@ export async function POST(req: Request) {
         buildStamp: BUILD_STAMP,
         error: "bad_request",
         message: "Invalid currency",
-        details: "currency must be a 3-letter code like USD/EUR/CHF",
+        details: "currency must be a 3-letter code (CHF)",
+      },
+      { status: 400 }
+    );
+  }
+
+  // ✅ CHF-first/CHF-only (presentation layer guard):
+  // crypto-pay must NEVER create non-CHF fiat invoices.
+  if (fiatCurrency !== "CHF") {
+    return NextResponse.json<ErrResponse>(
+      {
+        ok: false,
+        buildStamp: BUILD_STAMP,
+        error: "bad_request",
+        message: "Unsupported currency",
+        details: "Only CHF is supported in this environment",
       },
       { status: 400 }
     );

@@ -47,7 +47,7 @@ const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
     erc20: {
       code: "ERC20 · Ethereum",
       label: "ERC20 · Ethereum",
-      description: "USD Coin USDC · Ethereum (ERC-20)",
+      description: "USDC · Ethereum (ERC-20)",
     },
   },
 };
