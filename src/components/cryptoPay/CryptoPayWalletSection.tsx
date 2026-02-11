@@ -52,10 +52,6 @@ const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
   },
 };
 
-type SimulatePaidOk = { ok: true; invoiceId: string; status: string };
-type SimulatePaidError = { ok: false; error: string; details?: string };
-type SimulatePaidResponse = SimulatePaidOk | SimulatePaidError;
-
 type CopyKind = "address" | "amount" | null;
 
 function normalizeToken(v: string): TokenKey {
@@ -96,8 +92,8 @@ export function CryptoPayWalletSection({
   );
 
   const [copiedKind, setCopiedKind] = useState<CopyKind>(null);
-  const [isConfirming, setIsConfirming] = useState(false);
-  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [isConfirming] = useState(false);
+  const [confirmError] = useState<string | null>(null);
 
   // Address MUST come from backend (psp-core / provider)
   const addressToShow = useMemo(

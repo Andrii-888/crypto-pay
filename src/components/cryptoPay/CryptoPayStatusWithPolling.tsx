@@ -17,6 +17,11 @@ type Props = {
   ) => void;
 };
 
+type StatusApiOk = {
+  ok: true;
+  invoice: unknown;
+};
+
 function normalizeStatus(s?: string | null): InvoiceStatus {
   return s === "waiting" ||
     s === "confirmed" ||
@@ -36,10 +41,21 @@ function isExpiredByTime(expiresAt?: string | null) {
   return Number.isFinite(t) && Date.now() >= t;
 }
 
+function isStatusApiOk(x: unknown): x is StatusApiOk {
+  if (!x || typeof x !== "object") return false;
+  const o = x as { ok?: unknown; invoice?: unknown };
+  return o.ok === true && o.invoice != null;
+}
+
+function asObject(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
 export function CryptoPayStatusWithPolling({
   invoiceId,
   initialStatus,
   expiresAt,
+  onInvoiceUpdate,
 }: Props) {
   const router = useRouter();
 
@@ -81,6 +97,8 @@ export function CryptoPayStatusWithPolling({
       if (isExpiredByTime(expiresAt)) {
         statusRef.current = "expired";
         setStatus("expired");
+        // поднимем наверх хотя бы статус
+        onInvoiceUpdate?.((prev) => ({ ...prev, status: "expired" }));
         return;
       }
 
@@ -92,18 +110,20 @@ export function CryptoPayStatusWithPolling({
 
         if (!res.ok) throw new Error("status fetch failed");
 
-        const snap = await res.json();
-        if (!snap.ok) throw new Error("status api error");
+        const snap = (await res.json().catch(() => null)) as unknown;
+        if (!isStatusApiOk(snap)) throw new Error("status api shape invalid");
 
-        const nextStatus = normalizeStatus(snap.status);
+        // ✅ API возвращает invoice snapshot
+        const invObj = asObject(snap.invoice);
+        const nextStatus = normalizeStatus(invObj["status"] as string | null);
+
+        // ✅ пробрасываем весь инвойс наверх, чтобы обновились tx/aml/decision
+        onInvoiceUpdate?.(snap.invoice as InvoiceData);
 
         if (nextStatus !== statusRef.current) {
           statusRef.current = nextStatus;
           setStatus(nextStatus);
         }
-
-        // если хочешь — сюда можно пробросить данные наверх
-        // onInvoiceUpdate?.(snap as unknown as InvoiceData);
 
         if (nextStatus === "confirmed" && !redirectedRef.current) {
           redirectedRef.current = true;
@@ -111,22 +131,19 @@ export function CryptoPayStatusWithPolling({
           return;
         }
 
-        if (!isFinalStatus(nextStatus)) {
-          schedule(2500);
-        }
+        if (!isFinalStatus(nextStatus)) schedule(2500);
       } catch {
         schedule(3000);
       }
     };
 
-    // стартуем с паузы (не мгновенно), чтобы не спамить
     schedule(2500);
 
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [invoiceId, expiresAt, router]);
+  }, [invoiceId, expiresAt, router, onInvoiceUpdate]);
 
   return <CryptoPayStatusBadge status={status} />;
 }
