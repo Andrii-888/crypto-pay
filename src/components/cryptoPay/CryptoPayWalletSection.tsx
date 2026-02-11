@@ -42,8 +42,6 @@ const TOKEN_CONFIG: Record<TokenKey, TokenNetworkConfig> = {
     },
   },
   USDC: {
-    // NOTE: USDC on TRON is not available in NOWPayments for this account,
-    // so we intentionally expose only ERC20 here.
     erc20: {
       code: "ERC20 · Ethereum",
       label: "ERC20 · Ethereum",
@@ -65,12 +63,8 @@ function inferNetworkKey(network?: string | null): NetworkKey {
   const n = String(network || "")
     .trim()
     .toUpperCase();
-
-  // PSP-core returns chain: "TRON" | "ETH"
   if (n === "TRON" || n === "TRC20") return "trc20";
   if (n === "ETH" || n === "ETHEREUM" || n === "ERC20") return "erc20";
-
-  // fallback (should not happen in prod; only if PSP didn't send network)
   return "erc20";
 }
 
@@ -84,38 +78,27 @@ export function CryptoPayWalletSection({
   const router = useRouter();
 
   const token = useMemo(() => normalizeToken(cryptoCurrency), [cryptoCurrency]);
-
-  // PSP network is authoritative; fallback only if missing
   const netKeyToUse: NetworkKey = useMemo(
     () => inferNetworkKey(pspNetwork),
     [pspNetwork]
   );
 
   const [copiedKind, setCopiedKind] = useState<CopyKind>(null);
-  const [isConfirming] = useState(false);
-  const [confirmError] = useState<string | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
 
-  // Address MUST come from backend (psp-core / provider)
   const addressToShow = useMemo(
     () => String(walletAddress ?? "").trim(),
     [walletAddress]
   );
 
   const amountNumber = useMemo(() => {
-    // приводим к number максимально безопасно
-    if (cryptoAmount === null || cryptoAmount === undefined) {
-      return "0.000000";
-    }
-
+    if (cryptoAmount === null || cryptoAmount === undefined) return "0.000000";
     if (typeof cryptoAmount === "number") {
       return Number.isFinite(cryptoAmount)
         ? cryptoAmount.toFixed(6)
         : "0.000000";
     }
-
-    // всё остальное приводим через String()
     const parsed = Number(String(cryptoAmount).replace(",", "."));
-
     return Number.isFinite(parsed) ? parsed.toFixed(6) : "0.000000";
   }, [cryptoAmount]);
 
@@ -124,19 +107,18 @@ export function CryptoPayWalletSection({
     [amountNumber, token]
   );
 
-  const networkCfg = useMemo(() => {
-    return TOKEN_CONFIG[token]?.[netKeyToUse];
-  }, [token, netKeyToUse]);
+  const networkCfg = useMemo(
+    () => TOKEN_CONFIG[token]?.[netKeyToUse],
+    [token, netKeyToUse]
+  );
 
   const qrValue = useMemo(() => {
     if (!addressToShow) return "";
-
     const p = new URLSearchParams();
     p.set("amount", amountNumber);
     p.set("currency", token);
     p.set("invoice", invoiceId);
 
-    // pass chain value expected by PSP-core ("TRON" | "ETH") for consistency
     const chain = String(pspNetwork ?? "")
       .trim()
       .toUpperCase();
@@ -157,12 +139,12 @@ export function CryptoPayWalletSection({
 
   async function handleConfirmDemoPayment() {
     if (!invoiceId || isConfirming) return;
+    setIsConfirming(true);
 
-    // Presentation mode: just move to processing without calling any demo API.
+    // UX-only: user says “I’ve paid” -> go to success screen (real confirmation comes from polling)
     router.push(`/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`);
   }
 
-  // IMPORTANT: early-return ONLY after all hooks above (rules-of-hooks)
   if (!networkCfg) return null;
 
   return (
@@ -289,12 +271,6 @@ export function CryptoPayWalletSection({
           </span>
         </span>
       </button>
-
-      {confirmError && (
-        <p className="text-[11px] text-rose-600">
-          Demo confirm warning: {confirmError}
-        </p>
-      )}
     </section>
   );
 }

@@ -97,7 +97,6 @@ export function CryptoPayStatusWithPolling({
       if (isExpiredByTime(expiresAt)) {
         statusRef.current = "expired";
         setStatus("expired");
-        // поднимем наверх хотя бы статус
         onInvoiceUpdate?.((prev) => ({ ...prev, status: "expired" }));
         return;
       }
@@ -110,15 +109,25 @@ export function CryptoPayStatusWithPolling({
 
         if (!res.ok) throw new Error("status fetch failed");
 
-        const snap = (await res.json().catch(() => null)) as unknown;
-        if (!isStatusApiOk(snap)) throw new Error("status api shape invalid");
+        const snap = (await res.json()) as unknown;
+        if (!isStatusApiOk(snap)) throw new Error("status api shape mismatch");
 
-        // ✅ API возвращает invoice snapshot
         const invObj = asObject(snap.invoice);
-        const nextStatus = normalizeStatus(invObj["status"] as string | null);
 
-        // ✅ пробрасываем весь инвойс наверх, чтобы обновились tx/aml/decision
-        onInvoiceUpdate?.(snap.invoice as InvoiceData);
+        // ✅ status is inside invoice
+        const nextStatus = normalizeStatus(
+          typeof invObj.status === "string" ? invObj.status : undefined
+        );
+
+        // ✅ push entire invoice snapshot up (so wallet address / txHash appear)
+        onInvoiceUpdate?.((prev) => {
+          // we merge safely; prev has correct types, server snapshot may contain more fields
+          return {
+            ...prev,
+            ...(snap.invoice as Partial<InvoiceData>),
+            invoiceId: prev.invoiceId || id,
+          };
+        });
 
         if (nextStatus !== statusRef.current) {
           statusRef.current = nextStatus;
