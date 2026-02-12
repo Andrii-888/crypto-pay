@@ -59,6 +59,11 @@ export function CryptoPayStatusWithPolling({
 }: Props) {
   const router = useRouter();
 
+  const [invoiceSnap, setInvoiceSnap] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+
   const [status, setStatus] = useState<InvoiceStatus>(() =>
     normalizeStatus(initialStatus)
   );
@@ -113,6 +118,7 @@ export function CryptoPayStatusWithPolling({
         if (!isStatusApiOk(snap)) throw new Error("status api shape mismatch");
 
         const invObj = asObject(snap.invoice);
+        setInvoiceSnap(invObj);
 
         // ✅ status is inside invoice
         const nextStatus = normalizeStatus(
@@ -154,5 +160,110 @@ export function CryptoPayStatusWithPolling({
     };
   }, [invoiceId, expiresAt, router, onInvoiceUpdate]);
 
-  return <CryptoPayStatusBadge status={status} />;
+  return (
+    <div className="w-full">
+      <CryptoPayStatusBadge status={status} />
+
+      {/* DEBUG (dev only): invoice snapshot from polling */}
+      {process.env.NODE_ENV !== "production" && invoiceSnap && (
+        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+          <div className="mb-2 text-xs font-semibold text-zinc-300">
+            Debug: invoice snapshot
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 text-xs md:grid-cols-2">
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">invoice.status</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.status ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">txStatus</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.txStatus ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">walletAddress</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.walletAddress ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">txHash</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.txHash ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">
+                confirmations / required
+              </div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.confirmations ?? "—")} /{" "}
+                {String(invoiceSnap.requiredConfirmations ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">amlStatus</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.amlStatus ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">amlProvider</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.amlProvider ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">amlCheckedAt</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.amlCheckedAt ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">assetStatus</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.assetStatus ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">assetRiskScore</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.assetRiskScore ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">decisionStatus</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.decisionStatus ?? "—")}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-zinc-950 p-2">
+              <div className="text-[11px] text-zinc-500">decisionReason</div>
+              <div className="break-all text-zinc-200">
+                {String(invoiceSnap.decisionReasonCode ?? "—")}{" "}
+                {invoiceSnap.decisionReasonText
+                  ? `(${String(invoiceSnap.decisionReasonText)})`
+                  : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
