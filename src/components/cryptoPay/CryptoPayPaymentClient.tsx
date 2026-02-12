@@ -66,6 +66,25 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
   // wallet instructions require address to be actually useful
   const hasPaymentAddress = Boolean(effectiveWalletAddress);
 
+  {
+    /* DEBUG (temporary): shows why address is not visible */
+  }
+  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+    <div className="text-xs font-semibold text-slate-900">Debug /open/pay</div>
+    <div className="mt-2 space-y-1 text-[11px] text-slate-700 font-mono break-all">
+      <div>
+        invoice.walletAddress = {String(invoice.walletAddress ?? "null")}
+      </div>
+      <div>invoice.network = {String(invoice.network ?? "null")}</div>
+      <div>pay.address = {String(pay?.address ?? "null")}</div>
+      <div>pay.network = {String(pay?.network ?? "null")}</div>
+      <div>
+        effectiveWalletAddress = {String(effectiveWalletAddress || "EMPTY")}
+      </div>
+      <div>hasPaymentAddress = {String(hasPaymentAddress)}</div>
+    </div>
+  </div>;
+
   // ✅ Adapter: CryptoPayStatusWithPolling expects updater-style callback
   const handleInvoiceUpdate = (
     patch: InvoiceData | ((prev: InvoiceData) => InvoiceData)

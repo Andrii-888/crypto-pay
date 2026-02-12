@@ -174,9 +174,11 @@ export default async function PaymentPage({ params, searchParams }: PageProps) {
     fxPair: (strOrUndef(inv.fxPair) ?? undefined) as InvoiceData["fxPair"],
 
     txHash: (strOrUndef(inv.txHash) ?? undefined) as InvoiceData["txHash"],
-    walletAddress: (strOrUndef(inv.walletAddress) ??
-      strOrUndef(pay.address) ??
+
+    walletAddress: (strOrUndef(pay.address) ??
+      strOrUndef(inv.walletAddress) ??
       undefined) as InvoiceData["walletAddress"],
+
     confirmations: (numOrUndef(inv.confirmations) ??
       undefined) as InvoiceData["confirmations"],
     requiredConfirmations: (numOrUndef(inv.requiredConfirmations) ??
