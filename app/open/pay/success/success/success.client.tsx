@@ -109,75 +109,6 @@ function normalizeTxStatus(v: unknown): InvoiceView["txStatus"] {
   return "pending";
 }
 
-function asString(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim();
-  return s.length ? s : null;
-}
-
-function asNumber(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const s = v.trim().replace(",", ".");
-    if (!s) return null;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
-function extractInvoicePatch(data: StatusResponseOk): Partial<InvoiceView> {
-  return {
-    createdAt: asString(data.createdAt),
-    expiresAt: asString(data.expiresAt),
-    paymentUrl: asString(data.paymentUrl),
-
-    merchantId: asString(data.merchantId),
-
-    fiatAmount: asNumber(data.fiatAmount),
-    fiatCurrency: asString(data.fiatCurrency),
-
-    cryptoAmount: asNumber(data.cryptoAmount),
-    cryptoCurrency: asString(data.cryptoCurrency),
-
-    fees: data.fees
-      ? {
-          grossAmount: asNumber(data.fees.grossAmount),
-          feeAmount: asNumber(data.fees.feeAmount),
-          netAmount: asNumber(data.fees.netAmount),
-          feeBps: asNumber(data.fees.feeBps),
-          feePayer: asString(data.fees.feePayer),
-        }
-      : null,
-
-    fxRate: asNumber(data.fxRate),
-    fxPair: asString(data.fxPair),
-
-    network: asString(data.network),
-
-    walletAddress: asString(data.walletAddress),
-    txHash: asString(data.txHash),
-
-    confirmations: asNumber(data.confirmations),
-    requiredConfirmations: asNumber(data.requiredConfirmations),
-
-    detectedAt: asString(data.detectedAt),
-    confirmedAt: asString(data.confirmedAt),
-
-    amlStatus: asString(data.amlStatus),
-    riskScore: asNumber(data.riskScore),
-
-    assetStatus: asString(data.assetStatus),
-    assetRiskScore: asNumber(data.assetRiskScore),
-
-    decisionStatus: asString(data.decisionStatus),
-    decisionReasonCode: asString(data.decisionReasonCode),
-    decisionReasonText: asString(data.decisionReasonText),
-    decidedAt: asString(data.decidedAt),
-    decidedBy: asString(data.decidedBy),
-  };
-}
-
 function normalizeStatusResponse(
   data: StatusResponseOk | StatusResponseNew,
   fallbackId: string
@@ -264,10 +195,10 @@ function SuccessInner({ id }: { id: string }) {
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    const schedule = () => {
-      timeoutId = setTimeout(() => {
-        void tick();
-      }, 2500);
+    const schedule = (ms: number) => {
+      if (cancelled) return;
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => void tick(), ms);
     };
 
     const tick = async () => {
@@ -286,13 +217,13 @@ function SuccessInner({ id }: { id: string }) {
 
         if (!res.ok) {
           setError(getErrorMessage(data) ?? `HTTP ${res.status}`);
-          schedule();
+          schedule(2500);
           return;
         }
 
         if (!isStatusOk(data)) {
           setError(getErrorMessage(data) ?? "Invalid API response");
-          schedule();
+          schedule(2500);
           return;
         }
 
@@ -305,11 +236,10 @@ function SuccessInner({ id }: { id: string }) {
 
         statusRef.current = nextStatus;
 
-        const patch = extractInvoicePatch(normalized);
-
+        // ✅ IMPORTANT: merge full snapshot so wallet/tx/aml/decision show up
         setInvoice((prev) => ({
           ...prev,
-          ...patch,
+          ...(normalized as Partial<InvoiceView>),
           invoiceId: id,
           status: nextStatus,
           txStatus: nextTxStatus,
@@ -317,10 +247,10 @@ function SuccessInner({ id }: { id: string }) {
 
         setError(null);
 
-        if (nextStatus === "waiting") schedule();
+        if (nextStatus === "waiting") schedule(2500);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Fetch failed");
-        schedule();
+        schedule(3000);
       }
     };
 
