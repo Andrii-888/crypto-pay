@@ -18,6 +18,41 @@ type PayShape = {
   network?: string | null;
 };
 
+function readExtra(inv: InvoiceData) {
+  const o = inv as unknown as Record<string, unknown>;
+  const s = (v: unknown) =>
+    typeof v === "string" && v.trim() ? v.trim() : undefined;
+  const n = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v)
+      ? v
+      : typeof v === "string"
+      ? Number(v.replace(",", "."))
+      : undefined;
+
+  const amlProvider = s(o.amlProvider);
+  const amlCheckedAt = s(o.amlCheckedAt);
+  const decidedAt = s(o.decidedAt);
+  const decidedBy = s(o.decidedBy);
+
+  // riskScore / assetRiskScore might already exist on InvoiceData, but keep safe read
+  const riskScore = n(o.riskScore);
+  const assetRiskScore = n(o.assetRiskScore);
+
+  const decisionReasonCode = s(o.decisionReasonCode);
+  const decisionReasonText = s(o.decisionReasonText);
+
+  return {
+    amlProvider,
+    amlCheckedAt,
+    decidedAt,
+    decidedBy,
+    riskScore,
+    assetRiskScore,
+    decisionReasonCode,
+    decisionReasonText,
+  };
+}
+
 function readPay(inv: InvoiceData): PayShape | null {
   const maybe = inv as unknown as { pay?: unknown };
   const p = maybe.pay;
@@ -54,6 +89,7 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
   const isDead = isExpired || isRejected;
 
   const pay = readPay(invoice);
+  const extra = readExtra(invoice);
 
   // Prefer provider pay.* fields (NOWPayments) when present
   const effectiveWalletAddress = (
@@ -116,14 +152,8 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
           <div className="space-y-3">
             {isDead && (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 shadow-sm px-4 py-3 text-sm text-rose-800 sm:px-5">
-                <div className="font-semibold mb-0.5">
-                  Payment not completed
-                </div>
-                <div>
-                  This payment link is no longer valid. You can still see the
-                  payment details below. To pay, please return to the store
-                  checkout and create a new payment.
-                </div>
+                <div className="font-semibold mb-0.5">Payment expired</div>
+                <div>This payment request has expired.</div>
               </div>
             )}
 
@@ -143,6 +173,95 @@ function CryptoPayPaymentClientInner({ initialInvoice }: Props) {
               cryptoAmount={invoice.cryptoAmount}
               cryptoCurrency={invoice.cryptoCurrency}
             />
+
+            {/* AML & Decision (shown only when data exists) */}
+            {invoice.amlStatus ||
+            invoice.decisionStatus ||
+            invoice.riskScore !== undefined ||
+            invoice.assetStatus ? (
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+                <div className="text-xs font-semibold text-slate-900">
+                  AML & Decision
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-[11px] text-slate-500">AML status</div>
+                    <div className="font-medium text-slate-900">
+                      {invoice.amlStatus ?? "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] text-slate-500">Risk score</div>
+                    <div className="font-medium text-slate-900">
+                      {invoice.riskScore ?? "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] text-slate-500">Decision</div>
+                    <div className="font-medium text-slate-900">
+                      {invoice.decisionStatus ?? "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] text-slate-500">Reason</div>
+                    <div className="font-medium text-slate-900">
+                      {invoice.decisionReasonText ??
+                        invoice.decisionReasonCode ??
+                        "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] text-slate-500">
+                      Asset status
+                    </div>
+                    <div className="font-medium text-slate-900">
+                      {invoice.assetStatus ?? "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] text-slate-500">
+                      Asset risk score
+                    </div>
+                    <div className="font-medium text-slate-900">
+                      {invoice.assetRiskScore ?? "—"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-500">
+                  <div>
+                    Provider:{" "}
+                    <span className="text-slate-700">
+                      {extra.amlProvider ?? "—"}
+                    </span>
+                  </div>
+                  <div>
+                    AML checked:{" "}
+                    <span className="text-slate-700">
+                      {extra.amlCheckedAt ?? "—"}
+                    </span>
+                  </div>
+                  <div>
+                    Decided at:{" "}
+                    <span className="text-slate-700">
+                      {extra.decidedAt ?? "—"}
+                    </span>
+                  </div>
+                  <div>
+                    Decided by:{" "}
+                    <span className="text-slate-700">
+                      {extra.decidedBy ?? "—"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {/* Timer only makes sense when invoice is not final */}
             {!isConfirmed && !isDead ? (
