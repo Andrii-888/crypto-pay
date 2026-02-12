@@ -59,11 +59,6 @@ export function CryptoPayStatusWithPolling({
 }: Props) {
   const router = useRouter();
 
-  const [invoiceSnap, setInvoiceSnap] = useState<Record<
-    string,
-    unknown
-  > | null>(null);
-
   const [status, setStatus] = useState<InvoiceStatus>(() =>
     normalizeStatus(initialStatus)
   );
@@ -92,13 +87,17 @@ export function CryptoPayStatusWithPolling({
       if (cancelled) return;
 
       const id = invoiceId.trim();
+
+      // nothing to poll / already redirecting
       if (!id || redirectedRef.current) {
         schedule(2500);
         return;
       }
 
+      // stop polling if our local status is final
       if (isFinalStatus(statusRef.current)) return;
 
+      // local time-based expiry guard
       if (isExpiredByTime(expiresAt)) {
         statusRef.current = "expired";
         setStatus("expired");
@@ -118,35 +117,48 @@ export function CryptoPayStatusWithPolling({
         if (!isStatusApiOk(snap)) throw new Error("status api shape mismatch");
 
         const invObj = asObject(snap.invoice);
-        setInvoiceSnap(invObj);
 
         // ✅ status is inside invoice
         const nextStatus = normalizeStatus(
           typeof invObj.status === "string" ? invObj.status : undefined
         );
 
-        // ✅ push entire invoice snapshot up (so wallet address / txHash appear)
-        onInvoiceUpdate?.((prev) => {
-          // we merge safely; prev has correct types, server snapshot may contain more fields
-          return {
-            ...prev,
-            ...(snap.invoice as Partial<InvoiceData>),
-            invoiceId: prev.invoiceId || id,
-          };
-        });
+        // ✅ merge full snapshot up (walletAddress / txHash / txStatus / aml etc.)
+        onInvoiceUpdate?.((prev) => ({
+          ...prev,
+          ...(snap.invoice as Partial<InvoiceData>),
+          invoiceId: prev.invoiceId || id,
+        }));
 
         if (nextStatus !== statusRef.current) {
           statusRef.current = nextStatus;
           setStatus(nextStatus);
         }
 
-        if (nextStatus === "confirmed" && !redirectedRef.current) {
+        // ✅ redirect ONLY when business flow is really done:
+        // confirmed + AML stored + decision stored
+        const amlStatus =
+          typeof invObj.amlStatus === "string" ? invObj.amlStatus : null;
+
+        const decisionStatus =
+          typeof invObj.decisionStatus === "string"
+            ? invObj.decisionStatus
+            : null;
+
+        const canRedirect =
+          nextStatus === "confirmed" &&
+          amlStatus !== null &&
+          decisionStatus !== null &&
+          decisionStatus !== "none";
+
+        if (canRedirect && !redirectedRef.current) {
           redirectedRef.current = true;
           router.push(`/open/pay/success?invoiceId=${encodeURIComponent(id)}`);
           return;
         }
 
-        if (!isFinalStatus(nextStatus)) schedule(2500);
+        // keep polling until final OR until redirect condition becomes true
+        schedule(2500);
       } catch {
         schedule(3000);
       }
@@ -163,107 +175,6 @@ export function CryptoPayStatusWithPolling({
   return (
     <div className="w-full">
       <CryptoPayStatusBadge status={status} />
-
-      {/* DEBUG (dev only): invoice snapshot from polling */}
-      {process.env.NODE_ENV !== "production" && invoiceSnap && (
-        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
-          <div className="mb-2 text-xs font-semibold text-zinc-300">
-            Debug: invoice snapshot
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 text-xs md:grid-cols-2">
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">invoice.status</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.status ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">txStatus</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.txStatus ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">walletAddress</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.walletAddress ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">txHash</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.txHash ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">
-                confirmations / required
-              </div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.confirmations ?? "—")} /{" "}
-                {String(invoiceSnap.requiredConfirmations ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">amlStatus</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.amlStatus ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">amlProvider</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.amlProvider ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">amlCheckedAt</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.amlCheckedAt ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">assetStatus</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.assetStatus ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">assetRiskScore</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.assetRiskScore ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">decisionStatus</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.decisionStatus ?? "—")}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-zinc-950 p-2">
-              <div className="text-[11px] text-zinc-500">decisionReason</div>
-              <div className="break-all text-zinc-200">
-                {String(invoiceSnap.decisionReasonCode ?? "—")}{" "}
-                {invoiceSnap.decisionReasonText
-                  ? `(${String(invoiceSnap.decisionReasonText)})`
-                  : ""}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
