@@ -18,6 +18,8 @@ type ErrResponse = {
   details?: string;
   pspApiUrl?: string;
   backendStatus?: string;
+  sentMerchantIdLast4?: string;
+  sentApiKeyLast4?: string;
 };
 
 type StatusOkResponse = {
@@ -114,6 +116,10 @@ export async function GET(req: Request) {
           backendStatus: `HTTP ${status}`,
           details: sliceDetails(payload),
           pspApiUrl: PSP_API_URL,
+
+          // 🔍 TEMP DEBUG (masked credentials)
+          sentMerchantIdLast4: PSP_MERCHANT_ID ? PSP_MERCHANT_ID.slice(-4) : "",
+          sentApiKeyLast4: PSP_API_KEY ? PSP_API_KEY.slice(-4) : "",
         },
         { status }
       );
