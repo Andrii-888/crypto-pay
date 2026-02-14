@@ -1,14 +1,11 @@
-//app/api/payments/status/route.ts
+// app/api/payments/status/route.ts
 import { NextResponse } from "next/server";
+import { getPspEnv } from "@/lib/pspEnv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const BUILD_STAMP = "status-route-v2-2026-01-11__PASS_THRU_STATUS";
-
-const PSP_API_URL = (process.env.PSP_API_URL ?? "").replace(/\/+$/, "");
-const PSP_API_KEY = (process.env.PSP_API_KEY ?? "").trim();
-const PSP_MERCHANT_ID = (process.env.PSP_MERCHANT_ID ?? "").trim();
 
 type ErrResponse = {
   ok: false;
@@ -50,34 +47,24 @@ export async function GET(req: Request) {
     );
   }
 
-  if (!PSP_API_URL) {
+  // Centralized env validation (single source of truth)
+  let env: ReturnType<typeof getPspEnv>;
+  try {
+    env = getPspEnv();
+  } catch (e) {
     return NextResponse.json<ErrResponse>(
       {
         ok: false,
         buildStamp: BUILD_STAMP,
         error: "config",
-        message: "Missing PSP_API_URL",
-        details: "Set PSP_API_URL in .env.local and restart",
+        message: "Missing PSP env vars",
+        details: e instanceof Error ? e.message : String(e),
       },
       { status: 500 }
     );
   }
 
-  if (!PSP_MERCHANT_ID || !PSP_API_KEY) {
-    return NextResponse.json<ErrResponse>(
-      {
-        ok: false,
-        buildStamp: BUILD_STAMP,
-        error: "config",
-        message: "Missing PSP auth env vars",
-        details:
-          "Set PSP_MERCHANT_ID and PSP_API_KEY in .env.local and restart",
-      },
-      { status: 500 }
-    );
-  }
-
-  const url = `${PSP_API_URL}/invoices/${encodeURIComponent(invoiceId)}`;
+  const url = `${env.apiUrl}/invoices/${encodeURIComponent(invoiceId)}`;
 
   try {
     const r = await fetch(url, {
@@ -85,12 +72,11 @@ export async function GET(req: Request) {
       cache: "no-store",
       headers: {
         Accept: "application/json",
-        "x-merchant-id": PSP_MERCHANT_ID,
-        "x-api-key": PSP_API_KEY,
+        "x-merchant-id": env.merchantId,
+        "x-api-key": env.apiKey,
       },
     });
 
-    // Read once, then decide how to parse
     const contentType = r.headers.get("content-type") ?? "";
     const rawText = await r.text();
 
@@ -99,12 +85,11 @@ export async function GET(req: Request) {
       try {
         payload = JSON.parse(rawText) as unknown;
       } catch {
-        payload = rawText; // keep as text if JSON parsing fails
+        payload = rawText;
       }
     }
 
     if (!r.ok) {
-      // ✅ Pass-through real PSP status for correct debugging + UI logic
       const status = r.status;
 
       return NextResponse.json<ErrResponse>(
@@ -115,11 +100,9 @@ export async function GET(req: Request) {
           message: `PSP-Core responded with ${status}`,
           backendStatus: `HTTP ${status}`,
           details: sliceDetails(payload),
-          pspApiUrl: PSP_API_URL,
-
-          // 🔍 TEMP DEBUG (masked credentials)
-          sentMerchantIdLast4: PSP_MERCHANT_ID ? PSP_MERCHANT_ID.slice(-4) : "",
-          sentApiKeyLast4: PSP_API_KEY ? PSP_API_KEY.slice(-4) : "",
+          pspApiUrl: env.apiUrl,
+          sentMerchantIdLast4: env.merchantId ? env.merchantId.slice(-4) : "",
+          sentApiKeyLast4: env.apiKey ? env.apiKey.slice(-4) : "",
         },
         { status }
       );
@@ -127,7 +110,7 @@ export async function GET(req: Request) {
 
     // --- derived expiry (UI truth) ---
     // PSP-Core может оставлять status=waiting даже после expiresAt.
-    // Для UI мы считаем expired, если время уже вышло.
+    // Для UI считаем expired, если время уже вышло.
     let invoiceOut: unknown = payload;
 
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
@@ -172,7 +155,7 @@ export async function GET(req: Request) {
         error: "network_error",
         message: "Failed to reach PSP-Core",
         details,
-        pspApiUrl: PSP_API_URL,
+        pspApiUrl: env.apiUrl,
       },
       { status: 502 }
     );
