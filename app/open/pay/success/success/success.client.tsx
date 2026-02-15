@@ -205,7 +205,12 @@ function SuccessInner({ id }: { id: string }) {
       if (cancelled) return;
 
       // stop polling only when status is final
-      if (statusRef.current !== "waiting") return;
+      if (
+        statusRef.current === "confirmed" ||
+        statusRef.current === "expired" ||
+        statusRef.current === "rejected"
+      )
+        return;
 
       try {
         const res = await fetch(

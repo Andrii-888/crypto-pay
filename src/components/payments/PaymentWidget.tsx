@@ -39,8 +39,31 @@ export default function PaymentWidget({
   }
 
   async function handleMarkConfirmed() {
-    // здесь позже будет логика “платёж подтверждён”
-    setStatus("confirmed");
+    try {
+      const res = await fetch("/api/payments/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          invoiceId,
+          demo: true,
+          payCurrency: (cryptoCurrency || "USDC").toLowerCase(),
+          network: "ETH",
+          // txHash/walletAddress optional in demo branch
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.ok) {
+        console.error("Demo confirm failed:", data);
+        return;
+      }
+
+      setStatus("confirmed");
+    } catch (e) {
+      console.error("Demo confirm network error:", e);
+    }
   }
 
   return (

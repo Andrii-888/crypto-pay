@@ -11,8 +11,11 @@ type ConfirmBody = {
   invoiceId?: string;
   txHash?: string;
   walletAddress?: string | null;
-  payCurrency?: string | null; // e.g. usdttrc20
-  network?: string | null; // e.g. TRON
+  payCurrency?: string | null;
+  network?: string | null;
+  demo?: boolean;
+  paymentStatus?: string | null;
+  paymentId?: string | null;
 };
 
 type ErrResponse = {
@@ -70,6 +73,130 @@ export async function POST(req: Request) {
       },
       { status: 400 }
     );
+  }
+
+  // DEMO: allow "confirm" without real provider txid/IPN
+  if (body.demo === true) {
+    // Centralized env validation
+    let env: ReturnType<typeof getPspEnv>;
+    try {
+      env = getPspEnv();
+    } catch (e) {
+      return NextResponse.json<ErrResponse>(
+        {
+          ok: false,
+          buildStamp: BUILD_STAMP,
+          error: "config",
+          message: "Missing PSP env vars",
+          details: e instanceof Error ? e.message : String(e),
+        },
+        { status: 500 }
+      );
+    }
+
+    const demoMode =
+      (process.env.DEMO_MODE ?? "").trim().toLowerCase() === "true";
+    if (!demoMode) {
+      return NextResponse.json<ErrResponse>(
+        {
+          ok: false,
+          buildStamp: BUILD_STAMP,
+          error: "config",
+          message: "DEMO_MODE is not enabled",
+        },
+        { status: 403 }
+      );
+    }
+
+    const debugToken = (process.env.PSP_DEBUG_TOKEN ?? "").trim();
+    if (!debugToken) {
+      return NextResponse.json<ErrResponse>(
+        {
+          ok: false,
+          buildStamp: BUILD_STAMP,
+          error: "config",
+          message: "Missing PSP_DEBUG_TOKEN",
+        },
+        { status: 500 }
+      );
+    }
+
+    const demoTxHash =
+      txHash && isHexTx(txHash) ? txHash : `0x${"b".repeat(64)}`;
+    const demoWallet =
+      walletAddress || "0x1111111111111111111111111111111111111111";
+    const demoPayCurrency = payCurrency || "usdc";
+    const demoNetwork = network || "ETH";
+    const demoPaymentStatus = safeStr(body.paymentStatus ?? "") || "finished";
+    const demoPaymentId =
+      safeStr(body.paymentId ?? "") || `demo_${Date.now().toString(36)}`;
+
+    try {
+      const r = await fetch(`${env.apiUrl}/webhooks/nowpayments/demo-ipn`, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "x-debug-token": debugToken,
+        },
+        body: JSON.stringify({
+          invoiceId,
+          txHash: demoTxHash,
+          walletAddress: demoWallet,
+          payCurrency: demoPayCurrency,
+          network: demoNetwork,
+          paymentStatus: demoPaymentStatus,
+          paymentId: demoPaymentId,
+        }),
+      });
+
+      const backendPayload: unknown = await r.json().catch(() => null);
+
+      if (!r.ok) {
+        return NextResponse.json<ErrResponse>(
+          {
+            ok: false,
+            buildStamp: BUILD_STAMP,
+            error: "psp_core_error",
+            message: `PSP-Core demo-ipn responded with ${r.status}`,
+            backendStatus: `HTTP ${r.status}`,
+            details: sliceDetails(backendPayload),
+            pspApiUrl: env.apiUrl,
+          },
+          { status: r.status }
+        );
+      }
+
+      const out = NextResponse.json<OkResponse>(
+        {
+          ok: true,
+          buildStamp: BUILD_STAMP,
+          invoiceId,
+          backend: backendPayload,
+        },
+        { status: 200 }
+      );
+      out.headers.set("Cache-Control", "no-store");
+      return out;
+    } catch (e: unknown) {
+      const details =
+        e instanceof Error
+          ? `${e.name}: ${e.message}`.slice(0, 300)
+          : String(e ?? "Unknown error").slice(0, 300);
+
+      return NextResponse.json<ErrResponse>(
+        {
+          ok: false,
+          buildStamp: BUILD_STAMP,
+          error: "network_error",
+          message: "Failed to reach PSP-Core demo-ipn",
+          details,
+          pspApiUrl: env.apiUrl,
+        },
+        { status: 502 }
+      );
+    }
   }
 
   if (!txHash || !isHexTx(txHash)) {
