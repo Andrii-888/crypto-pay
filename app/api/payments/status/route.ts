@@ -109,12 +109,22 @@ export async function GET(req: Request) {
     }
 
     // --- derived expiry (UI truth) ---
-    // PSP-Core может оставлять status=waiting даже после expiresAt.
-    // Для UI считаем expired, если время уже вышло.
+    // PSP-Core может вернуть либо сам invoice, либо обёртку { invoice: ... }.
+    // Для UI всегда нормализуем к "чистому" invoice-объекту.
     let invoiceOut: unknown = payload;
 
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      const inv = payload as Record<string, unknown>;
+      const root = payload as Record<string, unknown>;
+      const maybeInvoice = root.invoice;
+
+      const inv =
+        maybeInvoice &&
+        typeof maybeInvoice === "object" &&
+        !Array.isArray(maybeInvoice)
+          ? (maybeInvoice as Record<string, unknown>)
+          : root;
+
+      invoiceOut = inv;
 
       const status = typeof inv.status === "string" ? inv.status : null;
       const expiresAt =
@@ -123,13 +133,11 @@ export async function GET(req: Request) {
       if (status === "waiting" && expiresAt) {
         const expMs = Date.parse(expiresAt);
         if (Number.isFinite(expMs) && Date.now() > expMs) {
-          invoiceOut = {
-            ...(inv as Record<string, unknown>),
-            status: "expired",
-          };
+          invoiceOut = { ...inv, status: "expired" };
         }
       }
     }
+
     // --- end derived expiry ---
 
     const out = NextResponse.json<StatusOkResponse>(

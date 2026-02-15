@@ -43,8 +43,7 @@ function safeStr(v: unknown): string {
 }
 
 function isHexTx(v: string): boolean {
-  const s = String(v ?? "").trim();
-  return /^(0x)?[0-9a-fA-F]{64}$/.test(s);
+  return /^(0x)?[0-9a-fA-F]{64}$/.test(v.trim());
 }
 
 export async function POST(req: Request) {
@@ -80,7 +79,7 @@ export async function POST(req: Request) {
         buildStamp: BUILD_STAMP,
         error: "bad_request",
         message: "Invalid txHash",
-        details: "Expected 0x… hex string",
+        details: "Expected 64-hex tx hash (0x… optional)",
       },
       { status: 400 }
     );
