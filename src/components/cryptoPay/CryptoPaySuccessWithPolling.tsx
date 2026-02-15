@@ -91,6 +91,14 @@ type InvoiceView = {
 
 type TokenKey = "USDT" | "USDC";
 
+const CP_STORAGE = {
+  txHash: "cp_txHash",
+  walletAddress: "cp_walletAddress",
+  network: "cp_network",
+  payCurrency: "cp_payCurrency",
+  confirmedOnce: "cp_confirmed_once",
+} as const;
+
 function normalizeToken(v: string): TokenKey {
   const t = String(v || "")
     .trim()
@@ -274,6 +282,62 @@ export function CryptoPaySuccessWithPolling({ invoiceId }: Props) {
 
   const startedRef = useRef(false);
   const statusRef = useRef<InvoiceStatus>("waiting");
+
+  const confirmOnceRef = useRef(false);
+
+  useEffect(() => {
+    if (!id) return;
+
+    // Guard 1: already tried in this mount
+    if (confirmOnceRef.current) return;
+
+    // Guard 2: already tried in this session (survive refresh)
+    if (typeof window === "undefined") return;
+    if (sessionStorage.getItem(CP_STORAGE.confirmedOnce) === "1") {
+      confirmOnceRef.current = true;
+      return;
+    }
+
+    // Need tx details from WalletSection (Step 2)
+    const txHash = (sessionStorage.getItem(CP_STORAGE.txHash) ?? "").trim();
+    const walletAddress = (
+      sessionStorage.getItem(CP_STORAGE.walletAddress) ?? ""
+    ).trim();
+    const network = (sessionStorage.getItem(CP_STORAGE.network) ?? "").trim();
+    const payCurrency = (
+      sessionStorage.getItem(CP_STORAGE.payCurrency) ?? ""
+    ).trim();
+
+    if (!txHash || !walletAddress || !network || !payCurrency) return;
+
+    // If invoice already confirmed (by IPN), mark and stop
+    const alreadyConfirmed =
+      invoice?.status === "confirmed" || invoice?.txStatus === "confirmed";
+
+    if (alreadyConfirmed) {
+      sessionStorage.setItem(CP_STORAGE.confirmedOnce, "1");
+      confirmOnceRef.current = true;
+      return;
+    }
+
+    // Mark BEFORE request to avoid duplicates on fast re-renders
+    sessionStorage.setItem(CP_STORAGE.confirmedOnce, "1");
+    confirmOnceRef.current = true;
+
+    void fetch("/api/payments/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invoiceId: id,
+        txHash,
+        walletAddress,
+        payCurrency,
+        network,
+      }),
+    }).catch(() => {
+      // Silent: polling continues. We'll add retry UX later if needed.
+    });
+  }, [id, invoice?.status, invoice?.txStatus]);
 
   useEffect(() => {
     if (!id) return;

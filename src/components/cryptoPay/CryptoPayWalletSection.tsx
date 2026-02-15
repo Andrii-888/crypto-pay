@@ -141,6 +141,22 @@ export function CryptoPayWalletSection({
     if (!invoiceId || isConfirming) return;
     setIsConfirming(true);
 
+    try {
+      // Save tx context for Success screen "confirm once"
+      // NOTE: txHash is not available in demo flow; Wallet tx flow will set it.
+      sessionStorage.setItem(
+        "cp_walletAddress",
+        String(addressToShow ?? "").trim()
+      );
+      sessionStorage.setItem("cp_network", String(pspNetwork ?? "").trim());
+      sessionStorage.setItem("cp_payCurrency", String(token ?? "").trim());
+
+      // Reset confirm-once flag for a new attempt
+      sessionStorage.removeItem("cp_confirmed_once");
+    } catch {
+      // ignore
+    }
+
     // UX-only: user says “I’ve paid” -> go to success screen (real confirmation comes from polling)
     router.push(`/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`);
   }

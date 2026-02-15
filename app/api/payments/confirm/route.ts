@@ -43,7 +43,8 @@ function safeStr(v: unknown): string {
 }
 
 function isHexTx(v: string): boolean {
-  return /^0x[0-9a-fA-F]{16,}$/.test(v);
+  const s = String(v ?? "").trim();
+  return /^(0x)?[0-9a-fA-F]{64}$/.test(s);
 }
 
 export async function POST(req: Request) {
@@ -100,6 +101,68 @@ export async function POST(req: Request) {
       },
       { status: 500 }
     );
+  }
+
+  // Provider secret for /providers/tx/detected
+  const providerSecret = (process.env.PROVIDER_TX_SECRET ?? "").trim();
+  if (!providerSecret) {
+    return NextResponse.json<ErrResponse>(
+      {
+        ok: false,
+        buildStamp: BUILD_STAMP,
+        error: "config",
+        message: "Missing PROVIDER_TX_SECRET",
+      },
+      { status: 500 }
+    );
+  }
+
+  if (!walletAddress) {
+    return NextResponse.json<ErrResponse>(
+      {
+        ok: false,
+        buildStamp: BUILD_STAMP,
+        error: "bad_request",
+        message: "Missing walletAddress",
+        details: "Required to mark tx as detected in PSP-Core",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!network) {
+    return NextResponse.json<ErrResponse>(
+      {
+        ok: false,
+        buildStamp: BUILD_STAMP,
+        error: "bad_request",
+        message: "Missing network",
+        details: "Expected ETH or TRON",
+      },
+      { status: 400 }
+    );
+  }
+
+  // 1) First, mark tx as DETECTED in PSP-Core (this attaches txHash + walletAddress)
+  try {
+    const detectedUrl = `${env.apiUrl}/providers/tx/detected`;
+    await fetch(detectedUrl, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "x-provider-secret": providerSecret,
+      },
+      body: JSON.stringify({
+        invoiceId,
+        txHash,
+        walletAddress,
+        network,
+      }),
+    });
+  } catch {
+    // best-effort: even if detected hook fails, we still try tx/confirm
   }
 
   const url = `${env.apiUrl}/invoices/${encodeURIComponent(

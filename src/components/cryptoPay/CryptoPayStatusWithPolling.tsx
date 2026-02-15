@@ -118,6 +118,36 @@ export function CryptoPayStatusWithPolling({
 
         const invObj = asObject(snap.invoice);
 
+        // Persist tx context for Success screen auto-confirm (Step 1)
+        try {
+          const txHash =
+            typeof invObj.txHash === "string" ? invObj.txHash.trim() : "";
+          const walletAddress =
+            typeof invObj.walletAddress === "string"
+              ? invObj.walletAddress.trim()
+              : "";
+          const network =
+            typeof invObj.network === "string" ? invObj.network.trim() : "";
+          const payCurrency =
+            typeof invObj.payCurrency === "string"
+              ? invObj.payCurrency.trim()
+              : typeof invObj.cryptoCurrency === "string"
+              ? invObj.cryptoCurrency.trim()
+              : "";
+
+          if (txHash) sessionStorage.setItem("cp_txHash", txHash);
+          if (walletAddress)
+            sessionStorage.setItem("cp_walletAddress", walletAddress);
+          if (network) sessionStorage.setItem("cp_network", network);
+          if (payCurrency)
+            sessionStorage.setItem("cp_payCurrency", payCurrency);
+
+          // If txHash arrived now, allow Success screen to run confirm once
+          if (txHash) sessionStorage.removeItem("cp_confirmed_once");
+        } catch {
+          // ignore
+        }
+
         // ✅ status is inside invoice
         const nextStatus = normalizeStatus(
           typeof invObj.status === "string" ? invObj.status : undefined
