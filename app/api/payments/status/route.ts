@@ -2,6 +2,8 @@
 import { NextResponse } from "next/server";
 import { getPspEnv } from "@/lib/pspEnv";
 
+export const revalidate = 0;
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -70,6 +72,7 @@ export async function GET(req: Request) {
     const r = await fetch(url, {
       method: "GET",
       cache: "no-store",
+      next: { revalidate: 0 },
       headers: {
         Accept: "application/json",
         "x-merchant-id": env.merchantId,
