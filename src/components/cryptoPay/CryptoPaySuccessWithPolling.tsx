@@ -349,7 +349,8 @@ export function CryptoPaySuccessWithPolling({ invoiceId }: Props) {
 
     const tick = async () => {
       if (cancelled) return;
-      if (isFinalStatus(statusRef.current)) return;
+      if (statusRef.current === "expired" || statusRef.current === "rejected")
+        return;
 
       try {
         const res = await fetch(
@@ -378,7 +379,7 @@ export function CryptoPaySuccessWithPolling({ invoiceId }: Props) {
           const nextStatus = normalizeStatus(snap.status);
           statusRef.current = nextStatus;
 
-          if (isFinalStatus(nextStatus)) return;
+          if (nextStatus === "expired" || nextStatus === "rejected") return;
         } else if (isObject(json) && json.ok === false) {
           const err = json as StatusApiErr;
           setError(err.error ?? "API error");
