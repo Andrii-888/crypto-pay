@@ -133,10 +133,6 @@ function normalizeStatus(s: unknown): InvoiceStatus {
     : "waiting";
 }
 
-function isFinalStatus(s: InvoiceStatus) {
-  return s === "confirmed" || s === "expired" || s === "rejected";
-}
-
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
