@@ -3,6 +3,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const ENABLE_MANUAL_CONFIRM =
+  process.env.NEXT_PUBLIC_CP_ENABLE_MANUAL_CONFIRM === "1";
+
 type InvoiceStatus = "waiting" | "confirmed" | "expired" | "rejected";
 
 type StatusApiOk = {
@@ -284,6 +287,9 @@ export function CryptoPaySuccessWithPolling({ invoiceId }: Props) {
   useEffect(() => {
     if (!id) return;
 
+    // 🔒 Production-safe: manual confirm only if explicitly enabled
+    if (!ENABLE_MANUAL_CONFIRM) return;
+
     // Guard 1: already tried in this mount
     if (confirmOnceRef.current) return;
 
@@ -294,7 +300,7 @@ export function CryptoPaySuccessWithPolling({ invoiceId }: Props) {
       return;
     }
 
-    // Need tx details from WalletSection (Step 2)
+    // Need tx details from WalletSection
     const txHash = (sessionStorage.getItem(CP_STORAGE.txHash) ?? "").trim();
     const walletAddress = (
       sessionStorage.getItem(CP_STORAGE.walletAddress) ?? ""
@@ -331,7 +337,7 @@ export function CryptoPaySuccessWithPolling({ invoiceId }: Props) {
         network,
       }),
     }).catch(() => {
-      // Silent: polling continues. We'll add retry UX later if needed.
+      // Silent: polling continues
     });
   }, [id, invoice?.status, invoice?.txStatus]);
 
