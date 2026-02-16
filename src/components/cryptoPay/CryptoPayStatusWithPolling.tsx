@@ -165,21 +165,13 @@ export function CryptoPayStatusWithPolling({
           setStatus(nextStatus);
         }
 
-        // ✅ redirect ONLY when business flow is really done:
-        // confirmed + AML stored + decision stored
-        const amlStatus =
-          typeof invObj.amlStatus === "string" ? invObj.amlStatus : null;
-
-        const decisionStatus =
-          typeof invObj.decisionStatus === "string"
-            ? invObj.decisionStatus
-            : null;
+        // ✅ redirect to Success as soon as payment is confirmed
+        // Success screen will continue polling for AML/decision.
+        const txStatus =
+          typeof invObj.txStatus === "string" ? invObj.txStatus : null;
 
         const canRedirect =
-          nextStatus === "confirmed" &&
-          amlStatus !== null &&
-          decisionStatus !== null &&
-          decisionStatus !== "none";
+          nextStatus === "confirmed" || txStatus === "confirmed";
 
         if (canRedirect && !redirectedRef.current) {
           redirectedRef.current = true;

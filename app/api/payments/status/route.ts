@@ -151,7 +151,7 @@ export async function GET(req: Request) {
       },
       { status: 200 }
     );
-    out.headers.set("Cache-Control", "no-store");
+    out.headers.set("Cache-Control", "no-store, max-age=0");
     return out;
   } catch (e: unknown) {
     const details =
