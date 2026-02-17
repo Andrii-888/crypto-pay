@@ -129,7 +129,9 @@ export default function CheckoutClient({ initialAmount }: CheckoutClientProps) {
         return;
       }
 
-      router.push(`/open/pay/${encodeURIComponent(invoiceId)}`);
+      router.push(
+        `/open/pay/success?invoiceId=${encodeURIComponent(invoiceId)}`
+      );
     } catch (err: unknown) {
       setError(
         err instanceof Error

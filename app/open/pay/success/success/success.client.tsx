@@ -188,6 +188,7 @@ function SuccessInner({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const statusRef = useRef<InvoiceStatus>("waiting");
+  const decisionRef = useRef<string>("");
 
   useEffect(() => {
     if (!id) return;
@@ -204,11 +205,13 @@ function SuccessInner({ id }: { id: string }) {
     const tick = async () => {
       if (cancelled) return;
 
-      // stop polling only when status is final
+      // stop polling when status is final OR decision is final
       if (
         statusRef.current === "confirmed" ||
         statusRef.current === "expired" ||
-        statusRef.current === "rejected"
+        statusRef.current === "rejected" ||
+        decisionRef.current === "approved" ||
+        decisionRef.current === "rejected"
       )
         return;
 
@@ -240,6 +243,10 @@ function SuccessInner({ id }: { id: string }) {
         const nextTxStatus = normalizeTxStatus(normalized.txStatus);
 
         statusRef.current = nextStatus;
+        const nextDecision = String(normalized.decisionStatus ?? "")
+          .trim()
+          .toLowerCase();
+        decisionRef.current = nextDecision;
 
         // ✅ IMPORTANT: merge full snapshot so wallet/tx/aml/decision show up
         setInvoice((prev) => ({
@@ -252,7 +259,9 @@ function SuccessInner({ id }: { id: string }) {
 
         setError(null);
 
-        if (nextStatus === "waiting") schedule(2500);
+        const isFinalDecision =
+          nextDecision === "approved" || nextDecision === "rejected";
+        if (nextStatus === "waiting" && !isFinalDecision) schedule(2500);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Fetch failed");
         schedule(3000);
